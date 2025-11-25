@@ -1,3 +1,4 @@
 # 忽略圖片資料夾
 apriltag-imgs/
 calib_images/
+**/__pycache__/
