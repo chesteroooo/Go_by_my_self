@@ -55,3 +55,20 @@
 * 0.5 rad/s  ≈ 每秒轉 28 度 (正常轉彎速度)
 * 0.1 rad/s  ≈ 每秒轉 5.7 度 (微調修正)
 * 3.14 rad/s ≈ 每秒轉 180 度 (瞬間掉頭)
+
+1. 轉向控制 (Steering):
+   目標: 將 position.x 收斂至 0 (Tag 置中)
+   公式: angular.z = -1 * KP_ANGULAR * position.x
+
+   * 符號邏輯解析:
+     - 當 Tag 在左邊 (position.x 為負)
+     - 我們希望車子左轉 (angular.z 為正)
+     - 因此需要補一個負號: (-1) * (負誤差) = 正轉向指令
+
+2. 前進控制 (Throttle):
+   目標: 將 position.z 收斂至 TARGET_DIST (保持距離)
+   公式: linear.x = KP_LINEAR * (position.z - TARGET_DIST)
+
+   * 符號邏輯解析:
+     - 當 (現在距離 > 目標距離) -> 誤差為正 -> linear.x 為正 (前進追)
+     - 當 (現在距離 < 目標距離) -> 誤差為負 -> linear.x 為負 (後退讓)
