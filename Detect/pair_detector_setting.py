@@ -137,6 +137,7 @@ class PairDetector:
         return detected_pairs
 
 
+
 # Convenience function for quick use without creating class instance
 def detect_pairs_once(results: List[Any],
                       history: Optional[Dict[str, deque]] = None,
@@ -199,3 +200,18 @@ def draw_pair_labels(img: np.ndarray, pairs: List[Dict[str, Any]],
             cv2.putText(img, distance_text, 
                         (cx + TEXT_X_OFFSET, third_line_y),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.6, (100, 255, 100), 2, cv2.LINE_AA)
+            
+
+# === 請補上這段缺少的函式 ===
+def draw_axes(img, K, rvec, tvec, length=0.03):
+    try:
+        axis = np.float32([[0,0,0],[length,0,0],[0,length,0],[0,0,length]]).reshape(-1,3)
+        dist0 = np.zeros((5,1), np.float32)
+        pts, _ = cv2.projectPoints(axis, rvec, tvec, K, dist0)
+        pts = pts.reshape(-1,2).astype(int)
+        o, x, y, z = pts
+        cv2.line(img, tuple(o), tuple(x), (0,0,255), 2)
+        cv2.line(img, tuple(o), tuple(y), (0,255,0), 2)
+        cv2.line(img, tuple(o), tuple(z), (255,0,0), 2)
+    except Exception:
+        pass

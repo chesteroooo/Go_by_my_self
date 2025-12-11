@@ -80,7 +80,7 @@ export ROS_IP=10.0.11.3
 透過 SSH 連線進車子 (ssh wheeltec@10.0.11.2)，並啟動相機：
 
 Bash
-
+roslaunch turn_on_wheeltec_robot mapping.launch
 roslaunch usb_cam usb_cam-test.launch
 (註：請確保 launch 檔中已包含 image_transport 的壓縮節點)
 
