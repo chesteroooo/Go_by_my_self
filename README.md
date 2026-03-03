@@ -75,19 +75,27 @@ export ROS_MASTER_URI=http://10.0.11.2:11311
 export ROS_IP=10.0.11.3
 存檔離開後，執行 source ~/.bashrc。
 
+包含檔案:
+1.pair_detector_setting(pair detect 的基礎設定)
+2.pair_detector(雙tag辨識)
+3.ros_detect(車子用的辨識器，會將辨識到的資訊publish)
+4.ros_move_follow_tag(控制程式，車子會跟著tag走)
+5.ros_move(控制程式，目前的車用版本，看到tag移動1.5m，隨時矯正)
+6.publish(資訊如何被運用)
+
 🚀 如何執行
 步驟 1：啟動車子 (Car Side)
 透過 SSH 連線進車子 (ssh wheeltec@10.0.11.2)，並啟動相機：
+or 遠端桌面連車，啟動ros, camera
 
-Bash
-roslaunch turn_on_wheeltec_robot mapping.launch
-roslaunch usb_cam usb_cam-test.launch
+Bash:
+roslaunch turn_on_wheeltec_robot mapping.launch (ROS)
+roslaunch usb_cam usb_cam-test.launch (Camera)
 (註：請確保 launch 檔中已包含 image_transport 的壓縮節點)
 
 步驟 2：啟動大腦 (PC Side)
 在電腦 WSL 中執行主程式：
 
-Bash
-
+Bash:
 cd ~/你的專案路徑
-python3 ros_remote_detect.py
+1.執行ros
