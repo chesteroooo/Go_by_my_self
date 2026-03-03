@@ -70,18 +70,25 @@ nano ~/.bashrc
 
 Bash
 
+# 包含檔案:
+1.pair_detector_setting(pair detect 的基礎設定)
+
+2.pair_detector(雙tag辨識)
+
+3.ros_detect(車子用的辨識器，會將辨識到的資訊publish)
+
+4.ros_move_follow_tag(控制程式，車子會跟著tag走)
+
+5.ros_move(控制程式，目前的車用版本，看到tag移動1.5m，隨時矯正)
+
+6.publish(資訊如何被運用)
+
 # === ROS 車子連線設定 (5G 網卡) ===
 export ROS_MASTER_URI=http://10.0.11.2:11311
 export ROS_IP=10.0.11.3
 存檔離開後，執行 source ~/.bashrc。
 
-包含檔案:
-1.pair_detector_setting(pair detect 的基礎設定)
-2.pair_detector(雙tag辨識)
-3.ros_detect(車子用的辨識器，會將辨識到的資訊publish)
-4.ros_move_follow_tag(控制程式，車子會跟著tag走)
-5.ros_move(控制程式，目前的車用版本，看到tag移動1.5m，隨時矯正)
-6.publish(資訊如何被運用)
+
 
 🚀 如何執行
 步驟 1：啟動車子 (Car Side)
