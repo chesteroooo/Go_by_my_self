@@ -21,7 +21,7 @@ MIN_SPEED_W = 0.08
 
 # 安全設定
 TIMEOUT_SEC = 5.0          
-SEARCH_SPEED_W = 0.25    
+SEARCH_SPEED_W = 0.37
 SEARCH_TIMEOUT = 35.0
 # ============================================
 
