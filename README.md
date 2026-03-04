@@ -79,9 +79,11 @@ Bash
 
 4.ros_move_follow_tag(控制程式，車子會跟著tag走)
 
-5.ros_move(控制程式，目前的車用版本，看到tag移動1.5m，隨時矯正)
+5.ros_move(控制程式，看到tag移動1.5m，隨時矯正)
 
-6.publish(資訊如何被運用)
+6.ros_move1(車用版)
+
+7.publish(資訊如何被運用)
 
 # === ROS 車子連線設定 (5G 網卡) ===
 export ROS_MASTER_URI=http://10.0.11.2:11311
