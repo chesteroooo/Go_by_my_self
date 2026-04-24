@@ -1,0 +1,40 @@
+# route_map.yaml
+# 圖形式路線地圖 — 支援分叉路線
+#
+# 每個 node 對應一個 AprilTag pair。
+# edges 定義兩個 node 之間的連通關係，以及哪個 pair_detector direction 代表「去程」。
+# 路徑規劃用 BFS，回傳需要依序通過的 node 序列。
+#
+# pair: 兩個 tag ID（順序無關，系統自動比對）
+# going_direction: pair_detector 輸出的 "going" 或 "returning"，
+#                  表示從 from → to 方向時 pair_detector 應看到哪個值
+
+nodes:
+  - id: "entrance"
+    pair: [0, 1]
+    name: "入口"
+
+  - id: "corridor"
+    pair: [2, 3]
+    name: "走廊交叉口"
+
+  - id: "office_a"
+    pair: [4, 5]
+    name: "辦公室A"
+
+  - id: "office_b"
+    pair: [6, 7]
+    name: "辦公室B"
+
+edges:
+  - from: "entrance"
+    to: "corridor"
+    going_direction: "going"
+
+  - from: "corridor"
+    to: "office_a"
+    going_direction: "going"
+
+  - from: "corridor"
+    to: "office_b"
+    going_direction: "going"

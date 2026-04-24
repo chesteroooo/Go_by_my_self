@@ -1,110 +1,137 @@
-本專案實作了一套 場外運算 (Off-board Processing) 架構。車子負責採集影像與移動，透過 5G USB 網卡將影像回傳至電腦 (WSL2)，由電腦進行高負載的視覺運算 (AprilTag/YOLO) 並發送控制指令。
+# Go by Myself — AprilTag 自動導航車
 
-系統架構
-車子 (身體): Wheeltec 機器人 (ROS Noetic)。
+場外運算 (Off-board Processing) 架構。車子負責採集影像與移動，透過 5GHz USB 網卡將影像回傳至電腦 (WSL2)，由電腦進行視覺運算並發送控制指令。
 
-任務: 拍攝影像、接收速度指令驅動馬達。
+## 系統架構
 
-IP: 10.0.11.2
+| 裝置 | 說明 | IP |
+|---|---|---|
+| 車子 (Wheeltec, ROS Noetic) | 拍攝影像、接收速度指令驅動馬達 | 10.0.11.2 |
+| 電腦 (Windows 11 + WSL2 Ubuntu 20.04) | AprilTag 偵測、發送控制指令 | 10.0.11.3 |
 
-遠端電腦 (大腦): Windows 11 + WSL2 (Ubuntu 20.04)。
+連線方式：USB 5GHz 網卡（低延遲、固定 IP）
 
-任務: 執行 AprilTag 定位與 YOLO 避障運算。
+## 資料夾結構
 
-IP: 10.0.11.3
+```
+Go_by_my_self/
+├── calibration/                        # 攝影機校正工具
+│   ├── capture_chessboard_images.py    # 拍攝棋盤格影像
+│   └── calibrate_from_images.py        # 計算內參，自動輸出到 Detect/calib_result.yaml
+├── Detect/
+│   ├── calib_result.yaml               # 攝影機校正結果 (兩種 detect 共用)
+│   ├── pair_detector_setting.py        # 核心模組：AprilTag pair 偵測演算法
+│   ├── pair_detector_balance.py        # 延伸模組：帶深度差資訊的 PairDetector
+│   ├── requirements.txt                # Python 套件需求
+│   ├── old_detect/                     # 攝影機裝在車上（透過 ROS topic 傳影像）
+│   │   ├── ros_detect.py              # 訂閱 /usb_cam/image_raw，發布 /target_info
+│   │   └── ros_move_follow_tag.py     # 跟隨 tag 移動（PID 控制）
+│   └── new_detect/                    # 攝影機直接連電腦（OpenCV 直接讀取）
+│       ├── ros_detect_local.py        # 本機 USB 攝影機，發布 /target_info
+│       ├── ros_move_map.py            # 地圖感知移動控制（狀態機）
+│       └── route_map.yaml             # 路線地圖設定
+└── README.md
+```
 
-連線方式: USB 5G 網卡 (低延遲、固定 IP)。
+## 環境建置
 
-🛠️ 環境建置指南 (電腦端)
-為了讓電腦能順利連線並控制車子，請務必依照以下步驟設定 WSL2。
+### 1. 安裝 WSL2 (Ubuntu 20.04)
 
-1. 安裝 WSL2 (Ubuntu 20.04)
-車子系統為 ROS Noetic，電腦必須安裝對應的 Ubuntu 20.04。 請以管理員身分開啟 PowerShell：
-
-PowerShell
-
+以管理員身分開啟 PowerShell：
+```powershell
 wsl --install -d Ubuntu-20.04
-2. 開啟鏡像網路模式 (Windows 11 必做)
-此步驟能讓 WSL 直接共用 Windows 的 USB 網卡 IP，解決防火牆與路由問題。
+```
 
-前往 C:\Users\你的使用者名稱\。
+### 2. 開啟鏡像網路模式（Windows 11 必做）
 
-建立一個檔案名為 .wslconfig (注意前面有點，且不能有 .txt 副檔名)。
-
-貼上以下內容並存檔：
-
-Ini, TOML
-
+在 `C:\Users\你的使用者名稱\` 建立 `.wslconfig`：
+```ini
 [wsl2]
 networkingMode=mirrored
-重啟 WSL：在 PowerShell 輸入 wsl --shutdown。
+```
+重啟 WSL：`wsl --shutdown`
 
-3. 安裝 ROS Noetic 與相依套件
-進入 WSL 終端機執行：
+### 3. 安裝 ROS Noetic
 
-A. 安裝 ROS Noetic 桌面版 使用魚香 ROS 一鍵安裝腳本 (推薦)：
-
-Bash
-
+```bash
 wget http://fishros.com/install -O fishros && . fishros
-# 選擇順序: [1] 安裝 ROS -> [1] Noetic -> [1] Desktop-Full (桌面版)
-B. 安裝 Python 套件
+# 選擇：[1] 安裝 ROS -> [1] Noetic -> [1] Desktop-Full
+```
 
-Bash
+### 4. 安裝 Python 套件
 
-# 更新 pip 工具
-python3 -m pip install --upgrade pip
-
-# 安裝視覺辨識套件
-pip3 install ultralytics pupil-apriltags opencv-python
-
-# 安裝 ROS 影像轉換工具 (重要)
+```bash
+pip3 install pupil-apriltags opencv-python PyYAML numpy
 sudo apt install ros-noetic-cv-bridge ros-noetic-vision-opencv -y
-4. 設定 ROS 連線 IP
-將連線設定寫入啟動檔，避免每次都要手動輸入。
+```
 
-Bash
+### 5. 設定 ROS 連線 IP
 
-nano ~/.bashrc
-在檔案最下方加入：
-
-Bash
-
-# 包含檔案:
-1.pair_detector_setting(pair detect 的基礎設定)
-
-2.pair_detector(雙tag辨識)
-
-3.ros_detect(車子用的辨識器，會將辨識到的資訊publish)
-
-4.ros_move_follow_tag(控制程式，車子會跟著tag走)
-
-5.ros_move(控制程式，看到tag移動1.5m，隨時矯正)
-
-6.ros_move1(車用版)
-
-7.publish(資訊如何被運用)
-
-# === ROS 車子連線設定 (5G 網卡) ===
+在 `~/.bashrc` 最下方加入：
+```bash
+source /opt/ros/noetic/setup.bash
 export ROS_MASTER_URI=http://10.0.11.2:11311
 export ROS_IP=10.0.11.3
-存檔離開後，執行 source ~/.bashrc。
+```
+```bash
+source ~/.bashrc
+```
 
+## 攝影機校正（首次使用前執行一次）
 
+```bash
+python3 calibration/capture_chessboard_images.py   # 按 s 儲存影像，q 離開（建議 15~25 張）
+python3 calibration/calibrate_from_images.py        # 自動輸出 Detect/calib_result.yaml
+```
 
-🚀 如何執行
-步驟 1：啟動車子 (Car Side)
-透過 SSH 連線進車子 (ssh wheeltec@10.0.11.2)，並啟動相機：
-or 遠端桌面連車，啟動ros, camera
+## 如何執行
 
-Bash:
-roslaunch turn_on_wheeltec_robot mapping.launch (ROS)
-roslaunch usb_cam usb_cam-test.launch (Camera)
-(註：請確保 launch 檔中已包含 image_transport 的壓縮節點)
+### 步驟 1：啟動車子（SSH 進車子 `ssh wheeltec@10.0.11.2`）
 
-步驟 2：啟動大腦 (PC Side)
-在電腦 WSL 中執行主程式：
+```bash
+roslaunch turn_on_wheeltec_robot mapping.launch
+roslaunch usb_cam usb_cam-test.launch
+```
 
-Bash:
-cd ~/你的專案路徑
-1.執行ros
+### 步驟 2A：Old Detect — 攝影機在車上
+
+在電腦 WSL 中執行（兩個 terminal 各開一個）：
+```bash
+python3 Detect/old_detect/ros_detect.py          # 感知節點
+python3 Detect/old_detect/ros_move_follow_tag.py # 控制節點
+```
+
+### 步驟 2B：New Detect — 攝影機連電腦
+
+確認攝影機接上電腦後（WSL2 需先用 `usbipd attach` 掛載），執行：
+```bash
+python3 Detect/new_detect/ros_detect_local.py    # 感知節點
+python3 Detect/new_detect/ros_move_map.py        # 地圖感知控制節點
+```
+
+### 確認 Topic 輸出
+
+```bash
+rostopic echo /target_info
+rostopic echo /cmd_vel
+```
+
+## /target_info 訊息格式（geometry_msgs/Pose 欄位對應）
+
+| 欄位 | 意義 |
+|---|---|
+| `orientation.x` | 左 tag ID |
+| `orientation.y` | 右 tag ID |
+| `orientation.w` | 1.0 = 偵測到，0.0 = 未偵測到 |
+| `position.x` | 水平像素誤差（負 = tag 在左，正 = tag 在右）|
+| `position.y` | depth_diff = t_right.z − t_left.z（公尺）|
+| `position.z` | 到 tag pair 中心的 3D 歐幾里得距離（公尺）|
+
+## WSL2 USB 攝影機設定（New Detect 使用前）
+
+在 Windows 端執行一次（需安裝 [usbipd-win](https://github.com/dorssel/usbipd-win)）：
+```powershell
+usbipd list                              # 列出 USB 裝置
+usbipd attach --wsl --busid <BUSID>     # 掛載攝影機到 WSL2
+```
+WSL2 確認：`ls /dev/video*` 應看到 `/dev/video0`

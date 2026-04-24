@@ -1,4 +1,18 @@
-# 忽略圖片資料夾
+# 圖片資料夾
 apriltag-imgs/
 calib_images/
+
+# Python 快取
 **/__pycache__/
+*.pyc
+
+# Windows 元資料
+*.Zone.Identifier
+*:Zone.Identifier
+
+# 校正輸出圖
+undistort_A.png
+undistort_B.png
+
+# Claude Code 本地設定
+.claude/

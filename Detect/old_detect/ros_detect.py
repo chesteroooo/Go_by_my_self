@@ -9,7 +9,9 @@ import math
 from pathlib import Path
 
 # 使用 Pose 來傳遞資訊
-from sensor_msgs.msg import CompressedImage
+# 刪除這一行： from sensor_msgs.msg import CompressedImage
+from sensor_msgs.msg import Image
+from cv_bridge import CvBridge, CvBridgeError
 from geometry_msgs.msg import Pose
 
 # 引入 AprilTag 與 Pair 相關工具
@@ -29,9 +31,11 @@ class RemotePerception:
         self.detector = Detector(families="tag36h11")
         self.pd = PairDetector(history_len=6, stable_threshold=4)
 
+        self.bridge = CvBridge()
+
         self.image_sub = rospy.Subscriber(
-            "/usb_cam/image_raw/compressed",  
-            CompressedImage, 
+            "/usb_cam/image_raw",   # <--- 改成未壓縮的話題
+            Image,
             self.image_callback,
             queue_size=1,
             buff_size=2**24
@@ -41,7 +45,7 @@ class RemotePerception:
         rospy.loginfo("感知節點啟動！(X=純水平誤差, Z=3D直線距離)")
 
     def init_calibration(self):
-        root = Path(__file__).parent
+        root = Path(__file__).parent.parent
         calib_path = root / CALIB_FILE
         if not calib_path.exists():
             rospy.logwarn(f"找不到校正檔: {calib_path}，使用預設參數")
@@ -62,9 +66,10 @@ class RemotePerception:
 
     def image_callback(self, msg):
         try:
-            np_arr = np.frombuffer(msg.data, np.uint8)
-            frame = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
-        except Exception:
+            # 直接使用 CvBridge 將 ROS Image 轉成 OpenCV 的 BGR 格式
+            frame = self.bridge.imgmsg_to_cv2(msg, "bgr8")
+        except CvBridgeError as e:
+            rospy.logerr(f"CvBridge 轉換錯誤: {e}")
             return
 
         und = cv2.remap(frame, self.map1, self.map2, interpolation=cv2.INTER_LINEAR)

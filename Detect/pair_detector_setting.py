@@ -5,19 +5,7 @@ from typing import List, Dict, Any, Optional, Tuple
 import cv2
 import numpy as np
 
-# Simple pair detector for AprilTag results from pupil_apriltags.Detector.detect(...)
-# Usage:
-#   pd = PairDetector(history_len=6, stable_threshold=4)
-#   pairs = pd.update_and_detect(results)
-# returns list of dicts with keys:
-#   "key" (min_max id string),
-#   "relation" (left_right id string, e.g. "0_1" or "1_0"),
-#   "direction" ("going" or "returning"),
-#   "center" (pixel tuple),
-#   "members" (tuple of two ints),
-#   "stable" (bool),
-#   "R" (3x3 np.array or None),
-#   "t" (3-d np.array or None)
+
 class PairDetector:
     def __init__(self, history_len: int = 6, stable_threshold: int = 4):
         self.history_len = history_len

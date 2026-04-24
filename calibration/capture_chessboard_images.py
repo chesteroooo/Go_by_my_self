@@ -1,9 +1,10 @@
 import cv2, os, time
 import numpy as np
+from pathlib import Path
 
 # 你的 7x10 格棋盤 ⇒ 內角點 9x6
 CHESSBOARD = (9, 6)  # (cols, rows) = inner corners
-SAVE_DIR = "calib_images"
+SAVE_DIR = str(Path(__file__).parent.parent / "calib_images")
 os.makedirs(SAVE_DIR, exist_ok=True)
 
 # 建議用與之後使用相同解析度（例如 1280x720）

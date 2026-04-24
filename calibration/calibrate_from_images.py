@@ -8,7 +8,8 @@ from pathlib import Path
 # 7x10 "格子" => 內角點為 (9,6)
 PATTERN_SIZE = (9, 6)        # (cols, rows) = 內角點數
 SQUARE_SIZE_M = 0.010        # 單格邊長(公尺)。只影響外參尺度，可先填 0.02。
-IMAGES_GLOB = "calib_images/*.png"   # 你的影像路徑樣式；也可用 *.jpg
+_ROOT = Path(__file__).parent.parent
+IMAGES_GLOB = str(_ROOT / "calib_images" / "*.png")   # 你的影像路徑樣式；也可用 *.jpg
 
 # ====== 找角點設定 ======
 CRITERIA = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)
@@ -87,8 +88,9 @@ out = {
     "pattern_size_inner_corners": [PATTERN_SIZE[0], PATTERN_SIZE[1]],
     "square_size_m": float(SQUARE_SIZE_M),
 }
-Path("calib_result.yaml").write_text(yaml.dump(out, sort_keys=False), encoding="utf-8")
-print("已儲存：calib_result.yaml")
+_out_path = _ROOT / "Detect" / "calib_result.yaml"
+_out_path.write_text(yaml.dump(out, sort_keys=False), encoding="utf-8")
+print(f"已儲存：{_out_path}")
 
 # ====== Undistort 示範 ======
 # 取一張原始影像示範校正前/後
