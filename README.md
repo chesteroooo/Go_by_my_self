@@ -6,8 +6,8 @@
 
 | 裝置 | 說明 | IP |
 |---|---|---|
-| 車子 (Wheeltec, ROS Noetic) | 拍攝影像、接收速度指令驅動馬達 | 10.0.11.2 |
-| 電腦 (Windows 11 + WSL2 Ubuntu 20.04) | AprilTag 偵測、發送控制指令 | 10.0.11.3 |
+| 車子 (Wheeltec, ROS Noetic) | 接收速度指令驅動馬達 | 10.0.11.2 |
+| 電腦 (Windows 11 + WSL2 Ubuntu 20.04) | 拍攝影像、AprilTag 偵測、發送控制指令 | 10.0.11.3 |
 
 連線方式：USB 5GHz 網卡（低延遲、固定 IP）
 
@@ -71,7 +71,7 @@ sudo apt install ros-noetic-cv-bridge ros-noetic-vision-opencv -y
 ```bash
 source /opt/ros/noetic/setup.bash
 export ROS_MASTER_URI=http://10.0.11.2:11311
-export ROS_IP=10.0.11.3
+export ROS_IP=你的網卡ip
 ```
 ```bash
 source ~/.bashrc
