@@ -8,7 +8,7 @@
   - DRIVING 狀態：
       * 看到 Tag  → 用 depth_diff + pixel_error 調整方向，同時前進
       * 看不到Tag → 繼續直走（不旋轉、不停車）
-      * 超過 5 秒完全看不到 Tag → STOPPED（停車）
+      * 超過 TAG_TIMEOUT 秒完全看不到 Tag → STOPPED（停車）
   - STOPPED 狀態：
       * 再次看到 Tag → 回 DRIVING，不需重新對齊
 
@@ -122,9 +122,7 @@ class MapMoveController:
         # INIT_SEARCH → INIT_ALIGN → DRIVING → STOPPED
         self.state             = "INIT_SEARCH"
         self.last_msg_time     = rospy.Time.now()
-        self.last_tag_time     = rospy.Time.now()
         self.search_start_time = rospy.Time.now()
-        self.align_start_time  = None
         self.no_tag_since      = None    # 開始計算看不到 tag 的時間
 
         # 位置感知
@@ -155,7 +153,6 @@ class MapMoveController:
             age = (current_time - self.last_msg_time).to_sec()
             if age <= 0.2 and self.current_pose.orientation.w == 1.0:
                 tag_visible = True
-                self.last_tag_time = current_time
                 id_a = self.current_pose.orientation.x
                 id_b = self.current_pose.orientation.y
                 pixel_error = self.current_pose.position.x

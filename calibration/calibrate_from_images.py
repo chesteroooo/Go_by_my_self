@@ -88,7 +88,7 @@ out = {
     "pattern_size_inner_corners": [PATTERN_SIZE[0], PATTERN_SIZE[1]],
     "square_size_m": float(SQUARE_SIZE_M),
 }
-_out_path = _ROOT / "Detect" / "calib_result.yaml"
+_out_path = _ROOT / "Detect" / "old_detect" / "calib_result.yaml"
 _out_path.write_text(yaml.dump(out, sort_keys=False), encoding="utf-8")
 print(f"已儲存：{_out_path}")
 

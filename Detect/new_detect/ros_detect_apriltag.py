@@ -1,28 +1,31 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-RealSense D435i 本機辨識節點 (Local RealSense Detection Node)
+RealSense D435i 本機辨識節點 — IR 串流版 (Local RealSense Detection Node, IR stream)
 
-用途：
-  - 使用 pyrealsense2 讀取 RGB 影像
-  - AprilTag 偵測 + pose 估計
-  - 發布 /target_info (geometry_msgs/Pose)
-  - 測試用，不影響既有流程
+使用 D435i 的 IR（紅外線）串流做 AprilTag 偵測：
+  - Global shutter：在機器人行進震動時不會產生「果凍」失真
+  - 本來就是灰階，AprilTag 直接使用，無需 cvtColor
+  - 關閉 IR 投射器（emitter），避免點陣干擾 tag 偵測
 
-WSL2 USB 轉接（Windows 端執行一次）：
-  1) 安裝 usbipd-win：https://github.com/dorssel/usbipd-win
-  2) 列出裝置：   usbipd list
-  3) 附加到 WSL2：usbipd attach --wsl --busid <BUSID>
+發布 /target_info (geometry_msgs/Pose)：
+  orientation.x  — 左  tag ID
+  orientation.y  — 右  tag ID
+  orientation.w  — 1.0 = 偵測到, 0.0 = 未偵測到
+  position.x     — 水平像素誤差 (pair 中心 - 畫面中心), 左=負 右=正
+  position.y     — depth_diff = t_right.z - t_left.z (公尺)
+  position.z     — 到 pair 中心的 3D 歐幾里得距離 (公尺)
 
-依賴：
-  - librealsense + pyrealsense2
-  - pupil_apriltags, rospy, opencv-python
+Ubuntu RealSense 設定（首次使用前）：
+  sudo apt install librealsense2-dkms librealsense2-utils -y
+  pip3 install pyrealsense2
+  realsense-viewer   # 確認相機連接正常
 """
 
 import os
 import sys
 
-ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "apriltag_setting"))
 if ROOT_DIR not in sys.path:
     sys.path.append(ROOT_DIR)
 
@@ -37,29 +40,39 @@ from pair_detector_balance import BalancePairDetector
 from pair_detector_setting import draw_axes, draw_pair_labels
 
 # ================= 參數設定 =================
-COLOR_W = 640
-COLOR_H = 480
-FPS = 30
+W   = 848
+H   = 480
+FPS = 60
 
-TAG_SIZE_M = 0.08  # Tag 邊長（公尺）
+IR_INDEX         = 1       # 左 IR = 1，右 IR = 2（AprilTag 用左眼即可）
+TAG_SIZE_M       = 0.08    # Tag 邊長（公尺）
 FRAME_TIMEOUT_MS = 5000
-
-# True 會啟用 depth stream（此版本僅用 RGB 偵測）
-ENABLE_DEPTH = False
 # ===========================================
 
 
-def get_color_intrinsics(profile: rs.pipeline_profile):
-    stream = profile.get_stream(rs.stream.color)
-    vsp = stream.as_video_stream_profile()
-    intr = vsp.get_intrinsics()
+def ir_intrinsics(profile: rs.pipeline_profile, index: int):
+    sp   = profile.get_stream(rs.stream.infrared, index)
+    intr = sp.as_video_stream_profile().get_intrinsics()
     camera_params = (intr.fx, intr.fy, intr.ppx, intr.ppy)
     K = np.array([
-        [intr.fx, 0.0, intr.ppx],
-        [0.0, intr.fy, intr.ppy],
-        [0.0, 0.0, 1.0],
+        [intr.fx, 0.0,     intr.ppx],
+        [0.0,     intr.fy, intr.ppy],
+        [0.0,     0.0,     1.0     ],
     ], dtype=np.float32)
-    return intr, camera_params, K, intr.width, intr.height
+    return camera_params, K, intr.width
+
+
+def disable_ir_emitter(profile: rs.pipeline_profile):
+    """關閉 IR 投射器，讓 IR 影像乾淨（沒有點陣），利於 AprilTag。"""
+    try:
+        depth_sensor = profile.get_device().first_depth_sensor()
+        if depth_sensor.supports(rs.option.emitter_enabled):
+            depth_sensor.set_option(rs.option.emitter_enabled, 0)
+            rospy.loginfo("IR emitter 已關閉")
+        else:
+            rospy.logwarn("此裝置不支援 emitter_enabled 選項")
+    except Exception as e:
+        rospy.logwarn(f"關閉 emitter 失敗: {e}")
 
 
 def main():
@@ -68,28 +81,28 @@ def main():
     detector = Detector(
         families="tag36h11",
         nthreads=4,
-        quad_decimate=1.5,
-        quad_sigma=0.0,
+        quad_decimate=1,
+        quad_sigma=0.5,
         refine_edges=True,
-        decode_sharpening=0.25,
+        decode_sharpening=0.5,
     )
-    pd = BalancePairDetector(history_len=6, stable_threshold=4)
+    pd  = BalancePairDetector(history_len=6, stable_threshold=4)
     pub = rospy.Publisher("/target_info", Pose, queue_size=1)
 
     pipeline = rs.pipeline()
-    config = rs.config()
-    config.enable_stream(rs.stream.color, COLOR_W, COLOR_H, rs.format.bgr8, FPS)
-    if ENABLE_DEPTH:
-        config.enable_stream(rs.stream.depth, COLOR_W, COLOR_H, rs.format.z16, FPS)
+    config   = rs.config()
+    config.enable_stream(rs.stream.infrared, IR_INDEX, W, H, rs.format.y8, FPS)
 
     profile = pipeline.start(config)
-    align = rs.align(rs.stream.color) if ENABLE_DEPTH else None
+    disable_ir_emitter(profile)
+    camera_params, K_ir, ir_w = ir_intrinsics(profile, IR_INDEX)
 
-    _, camera_params, K_color, color_w, _ = get_color_intrinsics(profile)
-    rate = rospy.Rate(FPS)
+    rospy.loginfo(f"RealSense IR 串流已開啟：{W}x{H} @ {FPS}fps")
 
-    fps = 0.0
+    rate  = rospy.Rate(FPS)
+    fps   = 0.0
     prev_t = rospy.get_time()
+
     try:
         while not rospy.is_shutdown():
             try:
@@ -98,17 +111,14 @@ def main():
                 rospy.logwarn_throttle(2.0, f"等待影像逾時: {e}")
                 rate.sleep()
                 continue
-            if ENABLE_DEPTH:
-                frames = align.process(frames)
 
-            color_frame = frames.get_color_frame()
-            if not color_frame:
-                rospy.logwarn_throttle(2.0, "未取得 color frame，重試中...")
+            ir_frame = frames.get_infrared_frame(IR_INDEX)
+            if not ir_frame:
+                rospy.logwarn_throttle(2.0, "未取得 IR frame，重試中...")
                 rate.sleep()
                 continue
 
-            frame = np.asanyarray(color_frame.get_data())
-            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            gray = np.asanyarray(ir_frame.get_data())  # 已是灰階 y8
 
             results = detector.detect(
                 gray,
@@ -117,7 +127,9 @@ def main():
                 tag_size=TAG_SIZE_M,
             )
 
-            # 繪製 Tag 邊框與座標軸
+            # 轉 BGR 用於視覺化（保留彩色標記）
+            frame = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
+
             for r in results:
                 corners = r.corners.astype(int)
                 for k in range(4):
@@ -125,13 +137,11 @@ def main():
                 if hasattr(r, "pose_R") and hasattr(r, "pose_t"):
                     rvec, _ = cv2.Rodrigues(r.pose_R)
                     tvec = r.pose_t.reshape(3, 1).astype(np.float32)
-                    draw_axes(frame, K_color, rvec, tvec, length=TAG_SIZE_M * 0.5)
+                    draw_axes(frame, K_ir, rvec, tvec, length=TAG_SIZE_M * 0.5)
 
-            # Pair 偵測
             pairs = pd.update_and_detect(results)
             draw_pair_labels(frame, pairs)
 
-            # 畫面顯示 depth_diff
             for p in pairs:
                 tl, tr = p.get("t_left"), p.get("t_right")
                 if tl is not None and tr is not None:
@@ -143,26 +153,23 @@ def main():
                         cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 200, 255), 2, cv2.LINE_AA,
                     )
 
-            # 建立 id → 偵測結果的查找表，用於取得第二個 tag 的像素位置
             id_to_result = {int(r.tag_id): r for r in results}
 
-            # 打包 /target_info
             msg = Pose()
             if pairs:
-                p = pairs[0]
+                p      = pairs[0]
                 id_a, id_b = p["members"]
                 msg.orientation.x = float(id_a)
                 msg.orientation.y = float(id_b)
                 msg.orientation.w = 1.0
 
-                # 對齊第二個 tag (id_b) 的像素中心
                 r_b = id_to_result.get(id_b)
                 if r_b is not None:
                     cx_b = float(np.mean(r_b.corners[:, 0]))
-                    msg.position.x = cx_b - (color_w / 2.0)
+                    msg.position.x = cx_b - (ir_w / 2.0)
                 else:
                     cx_p, _ = p["center"]
-                    msg.position.x = float(cx_p - (color_w / 2.0))
+                    msg.position.x = float(cx_p - (ir_w / 2.0))
 
                 tl, tr = p.get("t_left"), p.get("t_right")
                 if tl is not None and tr is not None:
@@ -178,9 +185,8 @@ def main():
 
             pub.publish(msg)
 
-            # 計算 FPS（指數平滑）
             now = rospy.get_time()
-            dt = now - prev_t
+            dt  = now - prev_t
             prev_t = now
             if dt > 0:
                 inst_fps = 1.0 / dt
@@ -190,14 +196,10 @@ def main():
                 frame,
                 f"FPS={fps:4.1f}  tags={len(results)} pairs={len(pairs)}",
                 (10, 30),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.7,
-                (255, 255, 0),
-                2,
-                cv2.LINE_AA,
+                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2, cv2.LINE_AA,
             )
 
-            cv2.imshow("RealSense Detection", frame)
+            cv2.imshow("RealSense Detection (IR)", cv2.resize(frame, (640, 360)))
             if cv2.waitKey(1) & 0xFF == ord("q"):
                 break
 

@@ -1,21 +1,23 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+import os
+import sys
 import rospy
 import cv2
 import yaml
 import numpy as np
-import math
 from pathlib import Path
 
-# 使用 Pose 來傳遞資訊
-# 刪除這一行： from sensor_msgs.msg import CompressedImage
 from sensor_msgs.msg import Image
 from cv_bridge import CvBridge, CvBridgeError
 from geometry_msgs.msg import Pose
 
-# 引入 AprilTag 與 Pair 相關工具
 from pupil_apriltags import Detector
+
+_APRILTAG_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "apriltag_setting"))
+if _APRILTAG_DIR not in sys.path:
+    sys.path.append(_APRILTAG_DIR)
 from pair_detector_setting import PairDetector, draw_pair_labels, draw_axes
 
 # ================= 參數設定 =================
@@ -45,7 +47,7 @@ class RemotePerception:
         rospy.loginfo("感知節點啟動！(X=純水平誤差, Z=3D直線距離)")
 
     def init_calibration(self):
-        root = Path(__file__).parent.parent
+        root = Path(__file__).parent
         calib_path = root / CALIB_FILE
         if not calib_path.exists():
             rospy.logwarn(f"找不到校正檔: {calib_path}，使用預設參數")

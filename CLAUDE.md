@@ -21,29 +21,33 @@ sudo apt install ros-noetic-cv-bridge ros-noetic-vision-opencv -y
 
 ```
 Go_by_my_self/
-├── calibration/                        # 攝影機校正工具 (共用)
+├── calibration/                        # 攝影機校正工具 (僅 old_detect 需要)
 │   ├── capture_chessboard_images.py    # 拍攝棋盤格校正影像
-│   └── calibrate_from_images.py        # 計算內參，輸出 Detect/calib_result.yaml
+│   └── calibrate_from_images.py        # 計算內參，輸出 Detect/old_detect/calib_result.yaml
 ├── Detect/
-│   ├── calib_result.yaml               # 攝影機內參 (兩種 detect 共用)
-│   ├── pair_detector_setting.py        # 核心演算法：PairDetector
-│   ├── pair_detector_balance.py        # 延伸：帶深度差的 PairDetector
-│   ├── requirements.txt
+│   ├── apriltag_setting/               # AprilTag pair 核心演算法 (共用模組)
+│   │   ├── pair_detector_setting.py    # PairDetector：偵測 tag pair、方向、穩定度
+│   │   └── pair_detector_balance.py    # 延伸：帶 depth_diff 的 BalancePairDetector
 │   ├── old_detect/                     # 攝影機在車上 (ROS topic 傳影像)
-│   │   ├── ros_detect.py              # 接收 /usb_cam/image_raw，發布 /target_info
-│   │   └── ros_move_follow_tag.py     # 依 /target_info 跟隨 tag
-│   └── new_detect/                    # 攝影機直接連電腦 (OpenCV 直讀)
-│       ├── ros_detect_local.py        # 本機 USB 攝影機，發布 /target_info
-│       ├── ros_move_map.py            # 地圖感知移動控制器
-│       └── route_map.yaml             # 路線地圖設定
+│   │   ├── calib_result.yaml           # 攝影機內參 (old_detect 專用)
+│   │   ├── ros_detect.py               # 接收 /usb_cam/image_raw，發布 /target_info
+│   │   └── ros_move_follow_tag.py      # 依 /target_info 跟隨 tag (PID)
+│   └── new_detect/                     # RealSense D435i 直接連電腦
+│       ├── ros_detect_apriltag.py      # IR 串流 AprilTag 偵測，發布 /target_info
+│       ├── ros_detect_dual.py          # IR(AprilTag)+Color(YOLO 地板) 雙串流
+│       ├── ros_move_map.py             # 地圖感知移動控制器 (狀態機)
+│       └── route_map.yaml              # 路線地圖設定
+├── requirements.txt
 └── README.md
 ```
 
-## Camera Calibration (one-time)
+## Camera Calibration (one-time, old_detect only)
+
+RealSense (new_detect) uses the camera's built-in factory intrinsics, so calibration is **only** needed for the old USB-cam pipeline.
 
 ```bash
 python3 calibration/capture_chessboard_images.py   # 按 s 儲存影像，q 離開
-python3 calibration/calibrate_from_images.py        # 輸出 Detect/calib_result.yaml
+python3 calibration/calibrate_from_images.py        # 輸出 Detect/old_detect/calib_result.yaml
 ```
 
 ## Running the System
@@ -60,10 +64,13 @@ python3 Detect/old_detect/ros_detect.py          # 感知節點，發布 /target
 python3 Detect/old_detect/ros_move_follow_tag.py # 控制節點，訂閱 /target_info
 ```
 
-### New Detect — Camera on PC
+### New Detect — RealSense D435i on PC
 ```bash
-python3 Detect/new_detect/ros_detect_local.py    # 感知節點，發布 /target_info
+python3 Detect/new_detect/ros_detect_apriltag.py # IR AprilTag 感知節點，發布 /target_info
 python3 Detect/new_detect/ros_move_map.py        # 地圖感知控制節點
+
+# 或：同時跑 AprilTag(IR) + YOLO 地板偵測(Color)
+python3 Detect/new_detect/ros_detect_dual.py     # 發布 /target_info 與 /floor_detected
 ```
 
 ### Inspect Topics
@@ -74,7 +81,7 @@ rostopic echo /cmd_vel
 
 ## Architecture
 
-Off-board processing: the robot streams camera images over a 5GHz USB network card to a WSL2 PC, which handles all computation and sends velocity commands back.
+Off-board processing: the robot streams camera images over a 5GHz USB network card to an Ubuntu PC, which handles all computation and sends velocity commands back.
 
 ### ROS Topic Flow (old_detect)
 ```
@@ -83,7 +90,8 @@ Robot Camera → /usb_cam/image_raw → ros_detect.py → /target_info → ros_m
 
 ### ROS Topic Flow (new_detect)
 ```
-PC Camera (OpenCV) → ros_detect_local.py → /target_info → ros_move_map.py → /cmd_vel → Robot Motors
+D435i IR → ros_detect_apriltag.py → /target_info → ros_move_map.py → /cmd_vel → Robot Motors
+                                     /floor_detected ↑ (ros_detect_dual.py only)
 ```
 
 ### /target_info Message Format (geometry_msgs/Pose — repurposed fields)
@@ -98,11 +106,12 @@ PC Camera (OpenCV) → ros_detect_local.py → /target_info → ros_move_map.py 
 
 ### Key Modules
 
-- **pair_detector_setting.py** — `PairDetector`: detects AprilTag pairs, computes 3D pose via SVD-averaged rotation, tracks stability via history deque.
-- **pair_detector_balance.py** — Extends `PairDetector` with per-tag translation vectors and depth_diff.
+- **apriltag_setting/pair_detector_setting.py** — `PairDetector`: detects AprilTag pairs, computes 3D pose via SVD-averaged rotation, tracks stability via history deque. Detect nodes add this folder to `sys.path` (`../apriltag_setting`) before importing.
+- **apriltag_setting/pair_detector_balance.py** — Extends `PairDetector` with per-tag translation vectors and depth_diff.
 - **old_detect/ros_detect.py** — Loads `calib_result.yaml`, undistorts images from `/usb_cam/image_raw`, publishes to `/target_info`.
 - **old_detect/ros_move_follow_tag.py** — PID follower, maintains target distance (0.5 m).
-- **new_detect/ros_detect_local.py** — Reads from local USB camera via OpenCV, publishes to `/target_info`.
+- **new_detect/ros_detect_apriltag.py** — Reads from RealSense D435i IR stream (global shutter, no jello), publishes to `/target_info`.
+- **new_detect/ros_detect_dual.py** — Dual stream: IR→AprilTag (`/target_info`) + Color→YOLO floor segmentation (`/floor_detected`).
 - **new_detect/ros_move_map.py** — State machine (INIT_SEARCH → INIT_ALIGN → DRIVING → STOPPED) with route map awareness.
 
 ## Key Tuning Parameters
@@ -110,4 +119,8 @@ PC Camera (OpenCV) → ros_detect_local.py → /target_info → ros_move_map.py 
 | File | Parameter | Default | Effect |
 |---|---|---|---|
 | old_detect/ros_move_follow_tag.py | `TARGET_DIST` | 0.5 m | Desired tag-to-robot distance |
-| new_detect/ros_move_map.py | `SEARCH_SPEED_W` | 0.37 | Rotation speed when searching |
+| new_detect/ros_move_map.py | `INIT_SEARCH_W` | 0.3 | Rotation speed when searching for first tag |
+| new_detect/ros_move_map.py | `MAX_SPEED_V` | 0.2 | Forward speed while driving |
+| new_detect/ros_move_map.py | `TAG_TIMEOUT` | 10.0 s | Seconds with no tag before stopping |
+| new_detect/ros_detect_apriltag.py | `TAG_SIZE_M` | 0.08 m | Printed tag side length (must match reality) |
+| new_detect/ros_detect_apriltag.py | `W` / `H` / `FPS` | 848/480/60 | IR stream resolution & frame rate |

@@ -1,18 +1,42 @@
-# 圖片資料夾
+# 圖片 / 資料集
 apriltag-imgs/
 calib_images/
+floor_dataset/
+*.bag
+
+# YOLO 模型
+*.pt
+*.onnx
 
 # Python 快取
 **/__pycache__/
 *.pyc
-
-# Windows 元資料
-*.Zone.Identifier
-*:Zone.Identifier
+*.pyo
+*.pyd
 
 # 校正輸出圖
 undistort_A.png
 undistort_B.png
+
+# ROS 建置產物
+build/
+devel/
+install/
+*.rosinstall
+
+# 編輯器
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Windows 元資料
+*.Zone.Identifier
+*:Zone.Identifier
 
 # Claude Code 本地設定
 .claude/
