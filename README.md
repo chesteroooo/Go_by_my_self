@@ -90,7 +90,7 @@ python3 calibration/calibrate_from_images.py        # 自動輸出 Detect/calib_
 
 ```bash
 roslaunch turn_on_wheeltec_robot mapping.launch
-roslaunch usb_cam usb_cam-test.launch
+roslaunch usb_cam usb_cam-test.launch(攝影機在車上才需要)
 ```
 
 ### 步驟 2A：Old Detect — 攝影機在車上
