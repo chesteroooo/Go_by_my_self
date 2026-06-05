@@ -47,7 +47,7 @@ COLOR_H  = 480
 
 FPS = 30
 
-TAG_SIZE_M       = 0.08
+TAG_SIZE_M       = 0.11    # 實際印出 11cm
 FRAME_TIMEOUT_MS = 5000
 
 # YOLO 設定

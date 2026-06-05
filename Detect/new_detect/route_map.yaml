@@ -9,32 +9,35 @@
 # going_direction: pair_detector 輸出的 "going" 或 "returning"，
 #                  表示從 from → to 方向時 pair_detector 應看到哪個值
 
+# 實測路線：共用 tag 0 為左錨點，右邊 tag 1~4 標示 waypoint
+# 起點 0_1 → 0_2 → 0_3 → 終點 0_4（在 0_4 前 1m 停車）
+
 nodes:
-  - id: "entrance"
+  - id: "wp1"
     pair: [0, 1]
-    name: "入口"
+    name: "起點 0_1"
 
-  - id: "corridor"
-    pair: [2, 3]
-    name: "走廊交叉口"
+  - id: "wp2"
+    pair: [0, 2]
+    name: "途經 0_2"
 
-  - id: "office_a"
-    pair: [4, 5]
-    name: "辦公室A"
+  - id: "wp3"
+    pair: [0, 3]
+    name: "途經 0_3"
 
-  - id: "office_b"
-    pair: [6, 7]
-    name: "辦公室B"
+  - id: "wp4"
+    pair: [0, 4]
+    name: "終點 0_4"
 
 edges:
-  - from: "entrance"
-    to: "corridor"
+  - from: "wp1"
+    to: "wp2"
     going_direction: "going"
 
-  - from: "corridor"
-    to: "office_a"
+  - from: "wp2"
+    to: "wp3"
     going_direction: "going"
 
-  - from: "corridor"
-    to: "office_b"
+  - from: "wp3"
+    to: "wp4"
     going_direction: "going"

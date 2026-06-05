@@ -40,16 +40,16 @@ from pair_detector_balance import BalancePairDetector
 from pair_detector_setting import draw_axes, draw_pair_labels
 
 # ================= 參數設定 =================
-W   = 848
-H   = 480
-FPS = 60
+W   = 1280
+H   = 720
+FPS = 30
 
 IR_INDEX         = 1       # 左 IR = 1，右 IR = 2（AprilTag 用左眼即可）
-TAG_SIZE_M       = 0.08    # Tag 邊長（公尺）
+TAG_SIZE_M       = 0.11    # Tag 邊長（公尺）— 實際印出 11cm
 FRAME_TIMEOUT_MS = 5000
 # ===========================================
 
-
+''
 def ir_intrinsics(profile: rs.pipeline_profile, index: int):
     sp   = profile.get_stream(rs.stream.infrared, index)
     intr = sp.as_video_stream_profile().get_intrinsics()
@@ -81,7 +81,7 @@ def main():
     detector = Detector(
         families="tag36h11",
         nthreads=4,
-        quad_decimate=1,
+        quad_decimate=1.0,     # 1.0=全解析度偵測，拉長偵測距離（原 1.5 約只到 2m）
         quad_sigma=0.5,
         refine_edges=True,
         decode_sharpening=0.5,
