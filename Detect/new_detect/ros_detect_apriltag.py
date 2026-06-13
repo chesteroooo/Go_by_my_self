@@ -37,7 +37,7 @@ from geometry_msgs.msg import Pose
 from pupil_apriltags import Detector
 
 from pair_detector_balance import BalancePairDetector
-from pair_detector_setting import draw_axes, draw_pair_labels
+from pair_detector_setting import draw_axes, draw_pair_labels, select_best_pair
 
 # ================= 參數設定 =================
 W   = 1280
@@ -47,9 +47,14 @@ FPS = 30
 IR_INDEX         = 1       # 左 IR = 1，右 IR = 2（AprilTag 用左眼即可）
 TAG_SIZE_M       = 0.11    # Tag 邊長（公尺）— 實際印出 11cm
 FRAME_TIMEOUT_MS = 5000
+
+# 同一組 pair 兩 tag 的最大 3D 間距 (m)：
+#   大於同組兩 tag 的實際間距、小於相鄰地點的距離。
+#   多地點 tag 同時入鏡時，靠這個濾掉跨地點的假 pair
+PAIR_MAX_GAP_M   = 1.0
 # ===========================================
 
-''
+
 def ir_intrinsics(profile: rs.pipeline_profile, index: int):
     sp   = profile.get_stream(rs.stream.infrared, index)
     intr = sp.as_video_stream_profile().get_intrinsics()
@@ -86,14 +91,22 @@ def main():
         refine_edges=True,
         decode_sharpening=0.5,
     )
-    pd  = BalancePairDetector(history_len=6, stable_threshold=4)
+    pd  = BalancePairDetector(history_len=6, stable_threshold=4,
+                              max_pair_gap_m=PAIR_MAX_GAP_M)
     pub = rospy.Publisher("/target_info", Pose, queue_size=1)
 
     pipeline = rs.pipeline()
     config   = rs.config()
     config.enable_stream(rs.stream.infrared, IR_INDEX, W, H, rs.format.y8, FPS)
 
-    profile = pipeline.start(config)
+    try:
+        profile = pipeline.start(config)
+    except RuntimeError as e:
+        rospy.logerr(f"無法開啟 RealSense 相機：{e}")
+        rospy.logerr("D435i 一次只能被『一個』程式開啟。請先關閉其他相機程式"
+                     "（ros_detect_apriltag.py / ros_detect_dual.py / ros_test_bypass.py / "
+                     "ros_test_ground_bypass.py / collect_floor_dataset.py / realsense-viewer）再執行。")
+        return
     disable_ir_emitter(profile)
     camera_params, K_ir, ir_w = ir_intrinsics(profile, IR_INDEX)
 
@@ -102,6 +115,7 @@ def main():
     rate  = rospy.Rate(FPS)
     fps   = 0.0
     prev_t = rospy.get_time()
+    last_pair_key = None   # 黏滯選擇：鎖定上一幀的 pair，避免逐幀跳換
 
     try:
         while not rospy.is_shutdown():
@@ -156,14 +170,14 @@ def main():
             id_to_result = {int(r.tag_id): r for r in results}
 
             msg = Pose()
-            if pairs:
-                p      = pairs[0]
-                id_a, id_b = p["members"]
-                msg.orientation.x = float(id_a)
-                msg.orientation.y = float(id_b)
+            p   = select_best_pair(pairs, prefer_key=last_pair_key)
+            last_pair_key = p["key"] if p is not None else None
+            if p is not None:
+                msg.orientation.x = float(p["id_left"])
+                msg.orientation.y = float(p["id_right"])
                 msg.orientation.w = 1.0
 
-                r_b = id_to_result.get(id_b)
+                r_b = id_to_result.get(p["id_right"])
                 if r_b is not None:
                     cx_b = float(np.mean(r_b.corners[:, 0]))
                     msg.position.x = cx_b - (ir_w / 2.0)

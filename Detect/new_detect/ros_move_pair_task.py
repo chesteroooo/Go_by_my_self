@@ -35,15 +35,55 @@ import sys
 import termios
 import time
 import tty
+from collections import deque
 from pathlib import Path
 
 import rospy
+import yaml
 from geometry_msgs.msg import Pose, Twist
 
-try:
-    from ros_move_map import RouteMap
-except Exception:
-    RouteMap = None
+
+class RouteMap:
+    """讀取 route_map.yaml，提供 Tag pair → 地點名稱的查詢。"""
+
+    def __init__(self, yaml_path: str):
+        data = yaml.safe_load(Path(yaml_path).read_text(encoding="utf-8"))
+        self.nodes = {n["id"]: n for n in data.get("nodes", [])}
+
+        self._pair_to_node = {}
+        for nid, n in self.nodes.items():
+            key = frozenset(int(x) for x in n["pair"])
+            self._pair_to_node[key] = nid
+
+        self._adj = {nid: [] for nid in self.nodes}
+        for e in data.get("edges", []):
+            f, t, gd = e["from"], e["to"], e["going_direction"]
+            self._adj[f].append({"to": t, "going_direction": gd})
+            rev = "returning" if gd == "going" else "going"
+            self._adj[t].append({"to": f, "going_direction": rev})
+
+    def find_node(self, id_a: int, id_b: int):
+        return self._pair_to_node.get(frozenset([int(id_a), int(id_b)]))
+
+    def node_name(self, node_id: str) -> str:
+        return self.nodes.get(node_id, {}).get("name", node_id)
+
+    def bfs_path(self, src: str, dst: str):
+        """BFS 最短路徑（供未來任務使用）。"""
+        if src == dst:
+            return [src]
+        visited, queue = {src}, deque([[src]])
+        while queue:
+            path = queue.popleft()
+            for edge in self._adj.get(path[-1], []):
+                nxt = edge["to"]
+                if nxt not in visited:
+                    new_path = path + [nxt]
+                    if nxt == dst:
+                        return new_path
+                    visited.add(nxt)
+                    queue.append(new_path)
+        return []
 
 # ================= 任務設定（依你的場地修改）=================
 GOAL_PAIR_IDS  = (0, 4)    # 去程終點 pair（0_4）
@@ -93,6 +133,7 @@ INIT_SEARCH_W       = 0.3
 SEARCH_FULL_CIRCLE  = 6.2832 / INIT_SEARCH_W * 1.25   # 掃一圈 + 25% 餘量 (秒)
 TAG_LOST_TIMEOUT    = 10.0
 MSG_FRESH_SEC       = 0.2
+MEMORY_W_DECAY_SEC  = 1.0    # 跟丟後延續最後轉向量的衰減時間（秒），之後直走
 # ==========================================================
 
 
@@ -159,6 +200,7 @@ class PairTaskController:
         self.dr_duration       = 0.0
         self.final_align_start = None
         self.last_goal_dist    = None
+        self.last_drive_w      = 0.0   # 跟丟記憶修正：最後一次看到 tag 的轉向量
 
         # 設定去程任務參數
         self._apply_leg("outbound")
@@ -332,6 +374,7 @@ class PairTaskController:
                 self.no_tag_since = None
                 w = -(KD_DRIVE * depth_diff + KP_DRIVE * pixel_error)
                 twist.angular.z = max(min(w, MAX_DRIVE_W), -MAX_DRIVE_W)
+                self.last_drive_w = twist.angular.z
 
                 goal_armed = self.prereq_seen or (self.goal_close_count >= GOAL_CONFIRM_FRAMES)
 
@@ -383,12 +426,17 @@ class PairTaskController:
                 else:
                     if self.no_tag_since is None:
                         self.no_tag_since = now
-                        rospy.loginfo("⚠️ 看不到 Tag，暫時直走...")
-                    if (now - self.no_tag_since).to_sec() >= TAG_LOST_TIMEOUT:
+                        rospy.loginfo("⚠️ 看不到 Tag，沿最後方向修正後直走...")
+                    elapsed_no_tag = (now - self.no_tag_since).to_sec()
+                    if elapsed_no_tag >= TAG_LOST_TIMEOUT:
                         rospy.logwarn(f"🛑 {TAG_LOST_TIMEOUT:.0f}s 未見 Tag，停車。")
                         self.state = "STOPPED"
                     else:
                         twist.linear.x = MAX_SPEED_V
+                        # 記憶修正：延續最後的轉向量並線性衰減，避免跟丟瞬間方向歸零
+                        if elapsed_no_tag < MEMORY_W_DECAY_SEC:
+                            decay = 1.0 - elapsed_no_tag / MEMORY_W_DECAY_SEC
+                            twist.angular.z = self.last_drive_w * decay
 
         # ── FINAL_ALIGN：去程到點後原地置中對準 0_4 ──
         elif self.state == "FINAL_ALIGN":

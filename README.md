@@ -90,7 +90,7 @@ D435i 的 IR 鏡頭是 **global shutter（全域快門）**，機器人在磚頭
 ### ROS Topic 資料流
 
 ```
-D435i IR ─► ros_detect_apriltag.py ─► /target_info ─► ros_move_map.py ─► /cmd_vel ─► 機器人馬達
+D435i IR ─► ros_detect_apriltag.py ─► /target_info ─► ros_move_pair_task.py ─► /cmd_vel ─► 機器人馬達
 ```
 
 ---
@@ -116,7 +116,11 @@ Go_by_my_self/
 │   └── new_detect/                   # ★ 現行：RealSense D435i 直接連電腦
 │       ├── ros_detect_apriltag.py     #   IR 串流 AprilTag 偵測，發布 /target_info
 │       ├── ros_detect_dual.py         #   IR(AprilTag) + Color(YOLO 地板) 雙串流
-│       ├── ros_move_map.py            #   地圖感知移動控制器（狀態機）
+│       ├── ros_move_pair_task.py      #   去程+回程任務控制器（狀態機，內含 RouteMap）
+│       ├── ros_move_turn_right.py     #   右轉任務控制器
+│       ├── ros_test_bypass.py         #   障礙繞行測試（自帶相機）
+│       ├── ros_test_ground_bypass.py  #   地面 tag 門 + /odom 路徑記憶 + 繞障回線（自帶相機）
+│       ├── collect_floor_dataset.py   #   YOLO 地板訓練資料收集
 │       └── route_map.yaml             #   路線地圖設定
 │
 ├── requirements.txt                  # Python 套件需求
@@ -209,10 +213,10 @@ python3 Detect/new_detect/ros_detect_apriltag.py
 ### 終端機 3 — 移動控制節點（電腦端）
 
 ```bash
-python3 Detect/new_detect/ros_move_map.py
+python3 Detect/new_detect/ros_move_pair_task.py
 ```
 
-機器人會開始旋轉找標籤 → 對齊 → 沿路線前進。
+機器人會開始旋轉找標籤 → 對齊 → 沿路線前進（鍵盤：空白鍵=緊急停止、g=回程、q=結束）。
 
 ### 確認資料流（除錯用）
 
@@ -267,12 +271,13 @@ old_detect 使用 `old_detect/calib_result.yaml` 校正檔（需先跑校正，�
 
 | 檔案 | 參數 | 預設 | 作用 |
 |---|---|---|---|
-| `new_detect/ros_detect_apriltag.py` | `TAG_SIZE_M` | `0.08` | **列印標籤的實際邊長（公尺），必須量準否則距離會錯** |
-| `new_detect/ros_detect_apriltag.py` | `W` / `H` / `FPS` | `848/480/60` | IR 串流解析度與幀率 |
+| `new_detect/ros_detect_apriltag.py` | `TAG_SIZE_M` | `0.11` | **列印標籤的實際邊長（公尺），必須量準否則距離會錯** |
+| `new_detect/ros_detect_apriltag.py` | `W` / `H` / `FPS` | `1280/720/30` | IR 串流解析度與幀率 |
 | `new_detect/ros_detect_apriltag.py` | `quad_decimate` | `1` | 偵測縮圖倍率：`1`=最遠最慢，`1.5`=較快較近 |
-| `new_detect/ros_move_map.py` | `INIT_SEARCH_W` | `0.3` | 開機搜尋標籤時的旋轉速度 |
-| `new_detect/ros_move_map.py` | `MAX_SPEED_V` | `0.2` | 前進線速度 |
-| `new_detect/ros_move_map.py` | `TAG_TIMEOUT` | `10.0` | 連續看不到標籤幾秒後停車 |
+| `new_detect/ros_move_pair_task.py` | `MAX_SPEED_V` | `0.2` | 巡航前進線速度 |
+| `new_detect/ros_move_pair_task.py` | `TAG_LOST_TIMEOUT` | `10.0` | 連續看不到標籤幾秒後停車 |
+| `new_detect/ros_test_ground_bypass.py` | `CAM_TILT_DEG` | `30.0` | 鏡頭下傾角，設錯會把地面當障礙 |
+| `new_detect/ros_test_ground_bypass.py` | `DODGE_OFFSET` | `0.45` | 繞障時右偏距離（勿超出車道）|
 | `old_detect/ros_move_follow_tag.py` | `TARGET_DIST` | `0.5` | 跟隨模式想保持的距離（公尺）|
 
 > **拉遠偵測距離**：標籤越大越好（15–20cm 可到 3–4m）；把鏡頭往下傾 10–15°；
@@ -309,9 +314,9 @@ edges:
 ```
 
 加新地點：在 `nodes` 加一筆（配一對新的 tag ID），並在 `edges` 描述它和哪個節點相連。
-`RouteMap` 已內建 BFS 最短路徑（`bfs_path()`），可供未來做「指定目的地導航」使用。
+`RouteMap`（定義於 `ros_move_pair_task.py`）已內建 BFS 最短路徑（`bfs_path()`），可供未來做「指定目的地導航」使用。
 
-> 目前 `ros_move_map.py` 只用地圖**顯示目前位置**，尚未用 BFS 做目的地決策——這是預留的擴充點。
+> 目前任務控制器只用地圖**顯示目前位置**，尚未用 BFS 做目的地決策——這是預留的擴充點。
 
 ### 加入 YOLO 地板/路徑偵測
 
@@ -353,6 +358,7 @@ python3 calibration/calibrate_from_images.py        # 自動輸出 Detect/old_de
 
 | 症狀 | 可能原因與解法 |
 |---|---|
+| 啟動相機程式出現 `Device or resource busy` / 資源被佔用 | D435i 一次只能被一個程式開啟。`ros_detect_*.py`、`ros_test_*.py`、`collect_floor_dataset.py`、`realsense-viewer` 都會佔用相機 — 先關掉其他相機程式再執行（`ros_test_*.py` 自帶相機+控制，要「取代」而非「搭配」偵測節點跑）|
 | `rostopic list` 顯示 `Unable to communicate with master` | 車子沒開機 / 沒跑 roslaunch；或 `ROS_MASTER_URI`、`ROS_IP` 設錯。先 `ping 10.0.11.2` |
 | 偵測視窗打不開 / 抓不到相機 | `realsense-viewer` 確認相機正常；USB 要插 3.0 孔；重插 |
 | 距離數值明顯不對 | `TAG_SIZE_M` 沒設成標籤實際邊長 |

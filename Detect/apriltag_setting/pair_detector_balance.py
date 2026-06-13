@@ -24,15 +24,11 @@ class BalancePairDetector(PairDetector):
 
         for p in pairs:
             tag_infos = p.pop("_tag_infos")  # consumed here, not exposed further
-            id_a, id_b = p["members"]
-            ta = tag_infos[id_a]["t"]
-            tb = tag_infos[id_b]["t"]
+            ta = tag_infos[p["id_left"]]["t"]
+            tb = tag_infos[p["id_right"]]["t"]
 
             if ta is not None and tb is not None:
-                if ta[0] < tb[0]:
-                    p["t_left"], p["t_right"] = ta, tb
-                else:
-                    p["t_left"], p["t_right"] = tb, ta
+                p["t_left"], p["t_right"] = ta, tb
             else:
                 p["t_left"] = p["t_right"] = None
 

@@ -6,9 +6,18 @@ import numpy as np
 
 
 class PairDetector:
-    def __init__(self, history_len: int = 6, stable_threshold: int = 4):
+    def __init__(self, history_len: int = 6, stable_threshold: int = 4,
+                 max_pair_gap_m: Optional[float] = None):
+        """max_pair_gap_m: 同一組 pair 兩 tag 的最大 3D 間距 (m)。
+
+        多個地點的 tag 同時入鏡時，任兩個 tag 都會被湊成 pair（5 個 tag
+        → 10 組），跨地點的假 pair 會產生無意義的 depth_diff。
+        設定此值（大於板上兩 tag 的實際間距、小於相鄰地點的距離）
+        即可把跨地點誤配全部濾掉。None = 不過濾（向後相容）。
+        """
         self.history_len = history_len
         self.stable_threshold = stable_threshold
+        self.max_pair_gap_m = max_pair_gap_m
         self._history: Dict[str, deque] = {}
 
     def clear_history(self) -> None:
@@ -68,6 +77,16 @@ class PairDetector:
             for j in range(i + 1, n):
                 A, B = tag_infos[i], tag_infos[j]
                 idA, idB = A["id"], B["id"]
+
+                # 同 ID 不可能是同一塊板上的 pair（多半是兩個地點各自的錨點 tag）
+                if idA == idB:
+                    continue
+                # 兩 tag 相距太遠 → 跨地點誤配，不是真的 pair
+                if (self.max_pair_gap_m is not None
+                        and A["t"] is not None and B["t"] is not None
+                        and float(np.linalg.norm(A["t"] - B["t"])) > self.max_pair_gap_m):
+                    continue
+
                 key = f"{min(idA, idB)}_{max(idA, idB)}"
 
                 if A["t"] is not None and B["t"] is not None:
@@ -94,6 +113,8 @@ class PairDetector:
                     "direction": direction,
                     "center":   (cx, cy),
                     "members":  (idA, idB),
+                    "id_left":  left_id,
+                    "id_right": other_id,
                     "stable":   stable,
                     "R":        R_comb,
                     "t":        t_comb,
@@ -101,6 +122,34 @@ class PairDetector:
                 })
 
         return detected_pairs
+
+
+def select_best_pair(pairs: List[Dict[str, Any]],
+                     prefer_key: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """Pick the pair to publish when several tag combinations are visible.
+
+    With 3+ tags in view every 2-combination becomes a pair, including
+    spurious ones (e.g. the two right-side tags of adjacent waypoints).
+    Prefer stable pairs, then the nearest one (smallest ‖t‖).
+
+    prefer_key（黏滯選擇）：傳入上一幀選中的 pair key，只要它這一幀
+    還偵測得到就繼續用它 — 避免多組 pair 同時可見時逐幀跳換，
+    造成 depth_diff 來源亂跳、車身亂轉。pair 離開視野後自動換下一組。
+    """
+    if not pairs:
+        return None
+
+    if prefer_key is not None:
+        for p in pairs:
+            if p.get("key") == prefer_key:
+                return p
+
+    def rank(p):
+        t = p.get("t")
+        dist = float(np.linalg.norm(t)) if t is not None else float("inf")
+        return (0 if p.get("stable") else 1, dist)
+
+    return min(pairs, key=rank)
 
 
 def draw_pair_labels(img: np.ndarray, pairs: List[Dict[str, Any]],

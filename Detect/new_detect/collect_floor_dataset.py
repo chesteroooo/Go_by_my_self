@@ -84,7 +84,13 @@ def main():
     config   = rs.config()
     config.enable_stream(rs.stream.color, COLOR_W, COLOR_H, rs.format.bgr8, FPS)
 
-    profile = pipeline.start(config)
+    try:
+        profile = pipeline.start(config)
+    except RuntimeError as e:
+        print(f"[錯誤] 無法開啟 RealSense 相機：{e}")
+        print("[提示] D435i 一次只能被『一個』程式開啟。請先關閉其他相機程式"
+              "（ros_detect_*.py / ros_test_*.py / realsense-viewer）再執行。")
+        return
     print(f"[相機]   RealSense Color 串流已開啟：{COLOR_W}x{COLOR_H} @ {FPS}fps")
 
     cv2.namedWindow("Collect Floor Dataset", cv2.WINDOW_AUTOSIZE)
