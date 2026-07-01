@@ -2,6 +2,27 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Project Goal — Visual-SLAM Autonomous Driving
+
+The end goal is **autonomous driving of the car**, using the **SLAMTEC Aurora S** visual SLAM as
+the **primary localization for almost the entire route**. How to run it lives in
+`Detect/new_detect/aurora_slam.launch` (see "Aurora S Visual SLAM" under Running the System).
+
+**Aurora hardware:** connects to the PC over **Ethernet at `192.168.11.1`** (data); USB-C is
+**power-only** (USB PD). Mounted at the **front of the car, laterally centred, ~0.45 m high,
+0.15 m forward of `base_link`**.
+
+**Deployment environment & the localization challenge:** the route includes one stretch that is
+**open and straight** — paved with **red + grey brick**, flanked by **grass on both sides**, with
+**trees on the left** and **buildings on the right**. This open, self-similar corridor is expected
+to be **hard for pure visual SLAM to localize** in (few close, stable features).
+
+**Plan — segmentation-assisted localization:** use **segmentation** (red/grey-brick road vs
+grass/trees/buildings) to compensate where visual SLAM degrades on that open straight path — keep
+the car centred on the segmented road and constrain heading so lateral/heading drift is corrected
+even when the SLAM pose is weak. This builds on the existing floor-segmentation work
+(`ros_detect_dual.py`, `collect_floor_dataset.py`).
+
 ## Environment Setup
 
 ROS Noetic must be sourced before running any ROS nodes:
@@ -40,7 +61,8 @@ Go_by_my_self/
 │       ├── ros_test_bypass.py          # 障礙繞行測試 (靜止障礙 S 形右繞，深度+光達雙重把關)
 │       ├── ros_test_ground_bypass.py   # 地面 tag 門 + /odom 路徑記憶 + 閉迴路繞障回線
 │       ├── collect_floor_dataset.py    # YOLO 地板訓練資料收集 (Color 串流)
-│       └── route_map.yaml              # 路線地圖設定
+│       ├── route_map.yaml              # 路線地圖設定
+│       └── aurora_slam.launch          # Aurora S 視覺 SLAM 包裝 launch (frames 改名 aurora_*，不與 wheeltec TF 衝突)
 ├── requirements.txt
 └── README.md
 ```
@@ -89,10 +111,25 @@ python3 Detect/new_detect/ros_test_bypass.py         # 障礙繞行測試
 python3 Detect/new_detect/ros_test_ground_bypass.py  # 地面 tag 門 + /odom 路徑記憶 + 繞障回線
 ```
 
+### Aurora S Visual SLAM (Ethernet — independent of the D435i)
+
+The Aurora S connects over Ethernet at `192.168.11.1` (power via USB-C PD or DC 9–24V). Build the
+vendor SDK once (`git clone https://github.com/Slamtec/aurora_ros ~/aurora_ros`, then `catkin_make`),
+then launch the project wrapper:
+```bash
+source ~/aurora_ros/devel/setup.bash
+roslaunch ~/Go_by_my_self/Detect/new_detect/aurora_slam.launch   # 視覺 SLAM，frames = aurora_*
+```
+Publishes 6DOF pose `/slamware_ros_sdk_server_node/robot_pose` plus `point_cloud`/depth/stereo/IMU.
+Runs as an **independent TF tree** (`aurora_map → aurora_odom → aurora_base_link`), so it does not
+collide with the robot's `map → odom → base_link`. For a standalone test without the robot, first
+`export ROS_MASTER_URI=http://localhost:11311` (roslaunch then starts its own roscore).
+
 ### Inspect Topics
 ```bash
 rostopic echo /target_info
 rostopic echo /cmd_vel
+rostopic hz /slamware_ros_sdk_server_node/robot_pose   # Aurora visual-SLAM pose (~15 Hz)
 ```
 
 ## Architecture
@@ -130,6 +167,7 @@ D435i IR → ros_detect_apriltag.py → /target_info → ros_move_pair_task.py �
 - **new_detect/ros_detect_dual.py** — Dual stream: IR→AprilTag (`/target_info`) + Color→YOLO floor segmentation (`/floor_detected`).
 - **new_detect/ros_move_pair_task.py** — Outbound+return task controller (state machine, keyboard e-stop). Defines `RouteMap` (reads `route_map.yaml`, pair→location lookup + BFS), reused by `ros_move_turn_right.py`.
 - **new_detect/ros_test_ground_bypass.py** — Self-contained (IR+Depth): ground-gate steering, `/odom` path-line memory across blind gaps, closed-loop depth+lidar obstacle bypass that returns to the remembered line.
+- **new_detect/aurora_slam.launch** — Wrapper for the SLAMTEC Aurora S ROS SDK (`slamware_ros_sdk`, built in `~/aurora_ros`). Runs the vendor node with all frames renamed `aurora_*` so its SLAM TF tree stays independent of the wheeltec tree. Primary localization for the autonomous-driving goal; fusion of its point cloud into `base_link` (mount offset 0.15 m fwd / 0 / 0.45 m up) is a later step (see the commented block at the bottom of the launch).
 
 ## Key Tuning Parameters
 
