@@ -28,21 +28,16 @@ python3 Detect/new_detect/segmentation/collect_floor_dataset.py --name redroad -
 
 ---
 
-## 2. Aurora — build a map (headless, no app)
-Three terminals, each with §0 first:
-```bash
-# T1 — SLAM node (start FIRST, leave running)
-roslaunch Detect/new_detect/aurora/aurora_slam.launch
+## 2. Aurora — build a map (use the App)
+Map building is done in **Aurora Remote** (visual feedback beats headless here).
+**Close any ROS Aurora node first — only ONE client can hold the Aurora at a time.**
+1. Open Aurora Remote → connect to `192.168.11.1`
+2. Device Operations → **Reset Map**, hold still until initialization completes (green)
+3. Drive/walk the route — smooth motion, mount height, close a loop
+4. Map Manager → **Download to File** → save to `~/maps/<name>.stcm`
+   (`.stcm` files are gitignored; keep them all in `~/maps/`)
 
-# T2 — status light: wait for "TRACKING OK" before moving
-python3 Detect/new_detect/aurora/aurora_status.py
-
-# T3 (optional) — record the run
-Detect/new_detect/aurora/record_aurora.sh light build_run
-```
-Then move the Aurora along the route (smooth, ~0.45 m height, close a loop).
-
-## 3. Aurora — save the map
+## 3. Aurora — save the map from ROS (alternative to the App)
 ```bash
 mkdir -p ~/maps
 Detect/new_detect/aurora/aurora_map.sh save ~/maps/redroad.stcm      # expect: success: True
