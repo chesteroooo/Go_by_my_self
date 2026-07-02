@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 The end goal is **autonomous driving of the car**, using the **SLAMTEC Aurora S** visual SLAM as
 the **primary localization for almost the entire route**. How to run it lives in
-`Detect/new_detect/aurora_slam.launch` (see "Aurora S Visual SLAM" under Running the System).
+`Detect/new_detect/aurora/aurora_slam.launch` (see "Aurora S Visual SLAM" under Running the System).
 
 **Aurora hardware:** connects to the PC over **Ethernet at `192.168.11.1`** (data); USB-C is
 **power-only** (USB PD). Mounted at the **front of the car, laterally centred, ~0.45 m high,
@@ -60,9 +60,22 @@ Go_by_my_self/
 │       ├── ros_move_turn_right.py      # 右轉任務：0_2 正上方停車→右轉90°→停在 0_4 前
 │       ├── ros_test_bypass.py          # 障礙繞行測試 (靜止障礙 S 形右繞，深度+光達雙重把關)
 │       ├── ros_test_ground_bypass.py   # 地面 tag 門 + /odom 路徑記憶 + 閉迴路繞障回線
-│       ├── collect_floor_dataset.py    # YOLO 地板訓練資料收集 (Color 串流)
 │       ├── route_map.yaml              # 路線地圖設定
-│       └── aurora_slam.launch          # Aurora S 視覺 SLAM 包裝 launch (frames 改名 aurora_*，不與 wheeltec TF 衝突)
+│       ├── aurora/                     # Aurora S 視覺 SLAM 工具（皆獨立、無相依）
+│       │   ├── aurora_slam.launch      # SLAM 包裝 launch (frames 改名 aurora_*，不與 wheeltec TF 衝突)
+│       │   ├── aurora_status.py        # 無 App 的即時狀態列 (init/tracking/reloc/pose)
+│       │   ├── aurora_map.sh           # 無 App 的地圖 save/load/reloc/reset (ROS services)
+│       │   ├── record_aurora.sh        # rosbag 錄製 (light/full profile)
+│       │   ├── analyze_aurora_bag.py   # 離線 SLAM 品質分析 (漂移/跳點/狀態/TF)
+│       │   └── inspect_semantic_seg.py # 測試 Aurora 內建語意分割
+│       ├── segmentation/               # 地板分割 / 資料集工具（皆獨立）
+│       │   ├── collect_floor_dataset.py# YOLO 地板訓練資料收集 (Color 串流) → ../train_data/
+│       │   ├── segformer_road.py       # 預訓練 SegFormer 路面分割測試
+│       │   ├── autolabel_segformer.py  # SegFormer 自動標註 → YOLOv8-seg 資料集 (跨平台)
+│       │   └── gemini_filter.py        # Gemini API 影像品質過濾 (clear/minor/bad)
+│       ├── train_data/                 # 訓練影像 (session_* 資料夾)
+│       └── sorted_data/                # 已分類訓練素材
+├── COMMANDS.md                         # 所有工作流程的指令速查表
 ├── requirements.txt
 └── README.md
 ```
@@ -118,8 +131,12 @@ vendor SDK once (`git clone https://github.com/Slamtec/aurora_ros ~/aurora_ros`,
 then launch the project wrapper:
 ```bash
 source ~/aurora_ros/devel/setup.bash
-roslaunch ~/Go_by_my_self/Detect/new_detect/aurora_slam.launch   # 視覺 SLAM，frames = aurora_*
+roslaunch ~/Go_by_my_self/Detect/new_detect/aurora/aurora_slam.launch   # 視覺 SLAM，frames = aurora_*
 ```
+Companion tools in `Detect/new_detect/aurora/`: `aurora_status.py` (live status, no app),
+`aurora_map.sh save|load|reloc|reset` (headless map control), `record_aurora.sh` +
+`analyze_aurora_bag.py` (record & analyze SLAM quality). **Only ONE client can hold the
+Aurora at a time** — close the Aurora Remote app before launching the ROS node, and vice versa.
 Publishes 6DOF pose `/slamware_ros_sdk_server_node/robot_pose` plus `point_cloud`/depth/stereo/IMU.
 Runs as an **independent TF tree** (`aurora_map → aurora_odom → aurora_base_link`), so it does not
 collide with the robot's `map → odom → base_link`. For a standalone test without the robot, first
@@ -167,7 +184,8 @@ D435i IR → ros_detect_apriltag.py → /target_info → ros_move_pair_task.py �
 - **new_detect/ros_detect_dual.py** — Dual stream: IR→AprilTag (`/target_info`) + Color→YOLO floor segmentation (`/floor_detected`).
 - **new_detect/ros_move_pair_task.py** — Outbound+return task controller (state machine, keyboard e-stop). Defines `RouteMap` (reads `route_map.yaml`, pair→location lookup + BFS), reused by `ros_move_turn_right.py`.
 - **new_detect/ros_test_ground_bypass.py** — Self-contained (IR+Depth): ground-gate steering, `/odom` path-line memory across blind gaps, closed-loop depth+lidar obstacle bypass that returns to the remembered line.
-- **new_detect/aurora_slam.launch** — Wrapper for the SLAMTEC Aurora S ROS SDK (`slamware_ros_sdk`, built in `~/aurora_ros`). Runs the vendor node with all frames renamed `aurora_*` so its SLAM TF tree stays independent of the wheeltec tree. Primary localization for the autonomous-driving goal; fusion of its point cloud into `base_link` (mount offset 0.15 m fwd / 0 / 0.45 m up) is a later step (see the commented block at the bottom of the launch).
+- **new_detect/aurora/aurora_slam.launch** — Wrapper for the SLAMTEC Aurora S ROS SDK (`slamware_ros_sdk`, built in `~/aurora_ros`). Runs the vendor node with all frames renamed `aurora_*` so its SLAM TF tree stays independent of the wheeltec tree. Primary localization for the autonomous-driving goal; fusion of its point cloud into `base_link` (mount offset 0.15 m fwd / 0 / 0.45 m up) is a later step (see the commented block at the bottom of the launch).
+- **new_detect/segmentation/** — Standalone dataset/segmentation tools: `collect_floor_dataset.py` (RealSense capture → `../train_data/`), `segformer_road.py` (pretrained SegFormer test), `autolabel_segformer.py` (SegFormer → YOLOv8-seg auto-labels, cross-platform, `--data` required), `gemini_filter.py` (Gemini API image-quality sorter; needs `GEMINI_API_KEY`). Saved SLAM maps (`.stcm`) live in `~/maps/` — they are gitignored (too big for GitHub).
 
 ## Key Tuning Parameters
 

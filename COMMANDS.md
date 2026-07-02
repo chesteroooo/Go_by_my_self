@@ -20,7 +20,7 @@ robot master `10.0.11.2`). Tip: put the two `source` lines in `~/.bashrc`.
 
 ## 1. Collect training data (RealSense D435i color)
 ```bash
-python3 Detect/new_detect/collect_floor_dataset.py --name redroad --interval 0.5
+python3 Detect/new_detect/segmentation/collect_floor_dataset.py --name redroad --interval 0.5
 ```
 - Saves to `Detect/new_detect/train_data/session_<timestamp>_redroad/`
 - Keys: `s` = save one, `p` = pause/resume auto-save, `q` = quit
@@ -32,40 +32,40 @@ python3 Detect/new_detect/collect_floor_dataset.py --name redroad --interval 0.5
 Three terminals, each with §0 first:
 ```bash
 # T1 — SLAM node (start FIRST, leave running)
-roslaunch Detect/new_detect/aurora_slam.launch
+roslaunch Detect/new_detect/aurora/aurora_slam.launch
 
 # T2 — status light: wait for "TRACKING OK" before moving
-python3 Detect/new_detect/aurora_status.py
+python3 Detect/new_detect/aurora/aurora_status.py
 
 # T3 (optional) — record the run
-Detect/new_detect/record_aurora.sh light build_run
+Detect/new_detect/aurora/record_aurora.sh light build_run
 ```
 Then move the Aurora along the route (smooth, ~0.45 m height, close a loop).
 
 ## 3. Aurora — save the map
 ```bash
 mkdir -p ~/maps
-Detect/new_detect/aurora_map.sh save ~/maps/redroad.stcm      # expect: success: True
+Detect/new_detect/aurora/aurora_map.sh save ~/maps/redroad.stcm      # expect: success: True
 ```
 
 ## 4. Aurora — test the map (load + relocalize)
 ```bash
-Detect/new_detect/aurora_map.sh load  ~/maps/redroad.stcm
-Detect/new_detect/aurora_map.sh reloc
+Detect/new_detect/aurora/aurora_map.sh load  ~/maps/redroad.stcm
+Detect/new_detect/aurora/aurora_map.sh reloc
 # watch T2: pose searches, then locks into the map
 ```
 Also: `aurora_map.sh reset` (clear the onboard map).
 
 ## 5. Aurora — analyze SLAM quality (offline)
 ```bash
-Detect/new_detect/record_aurora.sh full site_run1     # light=small | full=+images/cloud
+Detect/new_detect/aurora/record_aurora.sh full site_run1     # light=small | full=+images/cloud
 # ...move, Ctrl+C to stop...
-python3 Detect/new_detect/analyze_aurora_bag.py ~/aurora_bags/aurora_site_run1_*.bag
+python3 Detect/new_detect/aurora/analyze_aurora_bag.py ~/aurora_bags/aurora_site_run1_*.bag
 ```
 
 ## 6. Aurora — test its built-in semantic segmentation (on the road)
 ```bash
-python3 Detect/new_detect/inspect_semantic_seg.py     # node must be running + facing the road
+python3 Detect/new_detect/aurora/inspect_semantic_seg.py     # node must be running + facing the road
 ```
 
 ---
@@ -78,13 +78,13 @@ pip install transformers pillow opencv-python numpy
 
 ## 8. Segmentation — test pretrained SegFormer on images
 ```bash
-python3 Detect/new_detect/segformer_road.py <img1.jpg> <img2.jpg>
+python3 Detect/new_detect/segmentation/segformer_road.py <img1.jpg> <img2.jpg>
 # overlays -> ~/aurora_bags/segformer_out/
 ```
 
 ## 9. Segmentation — auto-label -> YOLOv8-seg dataset
 ```bash
-python3 Detect/new_detect/autolabel_segformer.py \
+python3 Detect/new_detect/segmentation/autolabel_segformer.py \
   --data Detect/new_detect/train_data \
   --out ~/aurora_bags/autolabel_dataset --n 300 --viz
 ```

@@ -40,3 +40,6 @@ Thumbs.db
 
 # Claude Code 本地設定
 .claude/
+
+# SLAM 地圖（大檔，存 ~/maps/）
+*.stcm

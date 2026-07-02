@@ -47,8 +47,8 @@ FPS     = 30
 
 FRAME_TIMEOUT_MS = 5000
 
-# 預設 session 資料夾根目錄：new_detect/train_data/
-TRAIN_DATA_ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "train_data")
+# 預設 session 資料夾根目錄：new_detect/train_data/（本檔已移入 segmentation/，故往上一層）
+TRAIN_DATA_ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "train_data")
 # ===========================================
 
 
