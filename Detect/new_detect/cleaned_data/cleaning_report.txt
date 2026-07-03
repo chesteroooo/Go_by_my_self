@@ -1,0 +1,84 @@
+Cleaning RUN  (dup MAD threshold=5, {'session_20260605_154345': 12.0}, blur<60.0, expo out of [40.0,235.0])
+-----------------------------------------------------------------------------------------------------------
+session_20260605_154345        total= 3449  kept=  729  dup=2241  blur= 400  expo=  0  bad= 79  (dupT=12)
+session_20260618_144733        total=   37  kept=   25  dup=   5  blur=   5  expo=  0  bad=  2  (dupT=5)
+session_20260618_145337        total=  258  kept=  216  dup=   4  blur=  30  expo=  0  bad=  8  (dupT=5)
+session_20260618_150720        total=  450  kept=  407  dup=   5  blur=  29  expo=  0  bad=  9  (dupT=5)
+session_20260702_170249        total=  604  kept=  517  dup=  82  blur=   5  expo=  0  bad=  0  (dupT=5)
+session_20260703_145458        total=   11  SKIPPED (junk session)
+session_20260703_151305        total= 1085  kept=  709  dup= 373  blur=   2  expo=  1  bad=  0  (dupT=5)
+session_20260703_160910        total=  922  kept=  586  dup= 334  blur=   2  expo=  0  bad=  0  (dupT=5)
+-----------------------------------------------------------------------------------------------------------
+TOTAL kept=3189  removed: dup=3044 blur=473 expo=1 gemini-bad=98 junk-session=11
+
+Second pass (YOLOv8n person filter): removed frames with close-up people/feet
+(person box height>45% or area>10% of frame, or box at bottom edge with area>3%)
+  removed session_20260605_154345/frame_00530_154811_355.jpg  (close, area=32%)
+  removed session_20260605_154345/frame_00534_154813_357.jpg  (close, area=45%)
+  removed session_20260605_154345/frame_00535_154813_856.jpg  (close, area=46%)
+  removed session_20260605_154345/frame_00593_154842_877.jpg  (close, area=92%)
+  removed session_20260605_154345/frame_00595_154843_878.jpg  (close, area=33%)
+  removed session_20260605_154345/frame_00600_154846_411.jpg  (close, area=6%)
+  removed session_20260605_154345/frame_01066_155240_041.jpg  (close, area=36%)
+  removed session_20260605_154345/frame_01069_155241_542.jpg  (close, area=12%)
+  removed session_20260605_154345/frame_01070_155242_042.jpg  (close, area=17%)
+  removed session_20260605_154345/frame_01072_155243_043.jpg  (close, area=23%)
+  removed session_20260605_154345/frame_01073_155243_543.jpg  (close, area=14%)
+  removed session_20260605_154345/frame_01074_155244_044.jpg  (close, area=12%)
+  removed session_20260605_154345/frame_01496_155615_623.jpg  (close, area=13%)
+  removed session_20260605_154345/frame_01497_155616_123.jpg  (close, area=12%)
+  removed session_20260605_154345/frame_01547_155641_208.jpg  (close, area=13%)
+  removed session_20260605_154345/frame_01548_155641_708.jpg  (close, area=14%)
+  removed session_20260605_154345/frame_01549_155642_208.jpg  (close, area=14%)
+  removed session_20260605_154345/frame_01558_155646_711.jpg  (close, area=38%)
+  removed session_20260605_154345/frame_01559_155647_212.jpg  (close, area=49%)
+  removed session_20260605_154345/frame_02345_160321_118.jpg  (close, area=36%)
+  removed session_20260605_154345/frame_02359_160328_123.jpg  (close, area=67%)
+  removed session_20260605_154345/frame_02629_160543_216.jpg  (close, area=10%)
+  removed session_20260605_154345/frame_02630_160543_716.jpg  (close, area=13%)
+  removed session_20260618_145337/frame_00026_145455_960.jpg  (close, area=35%)
+  removed session_20260618_145337/frame_00065_145653_041.jpg  (close, area=50%)
+  removed session_20260618_145337/frame_00066_145656_042.jpg  (close, area=14%)
+  removed session_20260618_145337/frame_00133_150017_182.jpg  (close, area=35%)
+  removed session_20260618_145337/frame_00175_150223_269.jpg  (close, area=51%)
+  removed session_20260618_145337/frame_00182_150244_283.jpg  (close, area=22%)
+  removed session_20260618_145337/frame_00207_150359_335.jpg  (close, area=88%)
+  removed session_20260618_145337/frame_00210_150408_341.jpg  (close, area=20%)
+  removed session_20260618_145337/frame_00219_150435_359.jpg  (close, area=32%)
+  removed session_20260618_145337/frame_00255_150623_434.jpg  (close, area=25%)
+  removed session_20260618_150720/frame_00027_150815_712.jpg  (close, area=9%)
+  removed session_20260618_150720/frame_00057_150915_753.jpg  (close, area=64%)
+  removed session_20260618_150720/frame_00080_151001_785.jpg  (close, area=30%)
+  removed session_20260618_150720/frame_00384_152010_239.jpg  (close, area=8%)
+  removed session_20260618_150720/frame_00385_152012_240.jpg  (close, area=19%)
+  removed session_20260618_150720/frame_00396_152034_256.jpg  (close, area=49%)
+  removed session_20260618_150720/frame_00399_152040_260.jpg  (close, area=10%)
+  removed session_20260702_170249/frame_00084_170702_392.jpg  (close, area=55%)
+  removed session_20260702_170249/frame_00085_170705_393.jpg  (close, area=50%)
+  removed session_20260702_170249/frame_00086_170708_395.jpg  (close, area=51%)
+  removed session_20260702_170249/frame_00087_170711_397.jpg  (close, area=37%)
+  removed session_20260702_170249/frame_00381_172154_168.jpg  (close, area=8%)
+  removed session_20260702_170249/frame_00390_172221_188.jpg  (close, area=8%)
+  removed session_20260702_170249/frame_00428_172415_303.jpg  (close, area=14%)
+  removed session_20260702_170249/frame_00430_172421_312.jpg  (close, area=8%)
+  removed session_20260703_151305/frame_00632_154444_064.jpg  (close, area=11%)
+  removed session_20260703_151305/frame_00645_154523_131.jpg  (close, area=13%)
+  removed session_20260703_151305/frame_00689_154735_254.jpg  (close, area=16%)
+  removed session_20260703_151305/frame_00709_154835_312.jpg  (close, area=17%)
+  removed session_20260703_151305/frame_00725_154923_388.jpg  (close, area=13%)
+  removed session_20260703_160910/frame_00009_160938_196.jpg  (close, area=15%)
+  removed session_20260703_160910/frame_00191_161844_874.jpg  (close, area=14%)
+  removed session_20260703_160910/frame_00909_165441_060.jpg  (close, area=24%)
+Second-pass total removed: 56
+
+Third pass (manual review): removed frames 276-433 from session_20260703_160910
+(different road: gravel/aggregate pavement through bike parking + bus stop, not the brick corridor) - 131 files
+
+Fourth pass (manual route review, user-specified ranges with boundary checks):
+  removed session_20260702_170249 frames 379-453 (67 files) - off-route/different road
+  removed session_20260605_154345 frames 3376-3404 (20 files) - off-route/different road
+  removed session_20260618_150720 frames 395-449 (52 files) - off-route/different road
+  removed session_20260703_151305 frames 322-328 (7 files) - off-route/different road
+  removed session_20260703_151305 frames 447-512 (65 files) - off-route/different road
+  removed session_20260703_160910 frames 835-910 (54 files) - off-route/different road
+  removed stray yolov8n.pt from session_20260605_154345
