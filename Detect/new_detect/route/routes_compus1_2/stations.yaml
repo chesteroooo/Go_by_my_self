@@ -1,0 +1,9 @@
+# 站點定義：名稱 + aurora_map 座標 (m)。
+# 座標不用準 —— 工具會吸附到 snap_radius 內最近的路徑點。
+# 可先看 preview.png / plan --render 的格線來抓座標。
+snap_radius: 6.0
+stations:
+  A:  {x: 3.0,   y: 1.0}     # 起點
+  M1: {x: 97.0,  y: -13.0}   # 中途點1：下段走廊東端（session 2 起點）
+  M2: {x: 213.0, y: 29.0}    # 中途點2：斜路中段（session 1 回程建圖終止處）
+  B:  {x: 339.0, y: 106.0}   # 終點：東北端建築群
