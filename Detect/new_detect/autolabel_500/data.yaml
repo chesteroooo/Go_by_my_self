@@ -1,0 +1,9 @@
+# YOLOv8-seg dataset (auto-labeled by SegFormer; correct in Roboflow/CVAT)
+path: C:/Users/user/Desktop/Go_by_my_self/Detect/new_detect/autolabel_500
+train: images
+val: images
+nc: 3
+names:
+  0: grass
+  1: road
+  2: sidewalk
