@@ -2,8 +2,8 @@
 # =============================================================================
 # field_test.sh — 一鍵現場測試（單一終端跑完整流程）
 #
-#   ./field_test.sh                 # 用預設地圖 ~/maps/compus1.2.stcm
-#   MAP=~/maps/compus3.stcm ./field_test.sh
+#   ./field_test.sh                 # 用預設地圖 ~/maps/test3.stcm
+#   MAP=~/maps/compus1.2.stcm ./field_test.sh    # 想用舊圖就覆寫 MAP
 #
 # 依序自動完成：
 #   0. 連線檢查（機器人 WiFi / Aurora 乙太網 / 地圖檔）
@@ -23,8 +23,8 @@ set -u
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"      # Go_by_my_self
 ROUTE_DIR="$ROOT/Detect/new_detect/route"
 AURORA_DIR="$ROOT/Detect/new_detect/aurora"
-PLANS="$ROUTE_DIR/routes_compus1_2"
-MAP="${MAP:-$HOME/maps/compus1.2.stcm}"
+PLANS="$ROUTE_DIR/routes_test3"
+MAP="${MAP:-$HOME/maps/test3.stcm}"
 BAGDIR="$HOME/aurora_bags"
 TS=$(date +%m%d_%H%M)
 LOG="$BAGDIR/logs_$TS"
@@ -44,8 +44,10 @@ pose_alive() { timeout 3 rostopic echo -n1 $NS/robot_pose >/dev/null 2>&1; }
 # ---------------------------------------------------------------- 收尾
 AURORA_PID=""
 BAG_PID=""
+MON_PID=""
 cleanup() {
     say "收尾"
+    [ -n "$MON_PID" ] && kill "$MON_PID" 2>/dev/null      # 關即時儀表板
     if [ -n "$BAG_PID" ] && kill -0 "$BAG_PID" 2>/dev/null; then
         echo "停止 rosbag（乾淨關檔，避免 .active）…"
         kill -INT "$BAG_PID" 2>/dev/null
@@ -171,6 +173,13 @@ rosbag record -O "$BAGDIR/test_$TS.bag" \
     /cmd_vel /route_plan >"$LOG/rosbag.log" 2>&1 &
 BAG_PID=$!
 echo "✓ 錄到 $BAGDIR/test_$TS.bag"
+
+say "3.5/6 即時儀表板（唯讀，會彈出視窗）"
+# 只訂閱不發 /cmd_vel，可與駕駛節點同時跑。底圖來自 Aurora 即時地圖，
+# 換 test3 不用改設定；routes_test3 的路線疊圖等你抽好路徑就會自動出現。
+python3 "$ROUTE_DIR/route_monitor.py" --routes routes_test3 >"$LOG/monitor.log" 2>&1 &
+MON_PID=$!
+echo "✓ 儀表板已啟動（Tk 視窗；無畫面/出錯會自動退回網頁，URL 見 $LOG/monitor.log）"
 
 say "4/6 載入地圖"
 read -rp "車放 A 點、車頭朝路線方向後按 Enter 載圖（這次開機已載過就輸入 s 跳過）: " ans

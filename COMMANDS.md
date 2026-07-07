@@ -85,7 +85,8 @@ python3 Detect/new_detect/segmentation/autolabel_segformer.py \
 ```
 Then: upload `autolabel_dataset/{images,labels,data.yaml}` to Roboflow/CVAT →
 correct (fix red-lane vs grey-sidewalk) → train YOLOv8-seg on Colab/Kaggle GPU →
-put the `.pt` into `ros_detect_dual.py` (`YOLO_MODEL_PATH`).
+put the trained model at `Detect/new_detect/best.pt` (auto-found by `ros_detect_dual.py`;
+override with `_model:=/path/to/best.pt`).
 
 ---
 
@@ -93,8 +94,19 @@ put the `.pt` into `ros_detect_dual.py` (`YOLO_MODEL_PATH`).
 ```bash
 python3 Detect/new_detect/ros_detect_apriltag.py      # AprilTag perception -> /target_info
 python3 Detect/new_detect/ros_move_pair_task.py       # outbound+return task controller
-python3 Detect/new_detect/ros_detect_dual.py          # AprilTag + YOLO floor (dual stream)
+python3 Detect/new_detect/ros_detect_dual.py          # AprilTag + best.pt road seg + lane centering
+#   drive mode is on by default but starts PAUSED — press SPACE in the OpenCV window to
+#   start/stop lane-centered driving (publishes /cmd_vel; do NOT run ros_move_* alongside).
+#   Perception-only (pair with a ros_move_* controller instead):
+python3 Detect/new_detect/ros_detect_dual.py _drive:=false
+#   Lane-following test on the 4-core N100: disable AprilTag/IR so seg runs ~7Hz not ~2Hz:
+python3 Detect/new_detect/ros_detect_dual.py _tags:=false
 python3 Detect/new_detect/ros_test_ground_bypass.py   # self-contained bypass test
+python3 Detect/new_detect/ros_teleop_panel.py         # teleop -> /cmd_vel: pops up a control window
+#   Hold-to-drive pad (arcs on diagonals) + linear/angular speed sliders; auto-stops
+#   0.6s after the window closes / link drops. `--web` = browser panel at http://<pc-ip>:8765
+#   (for Windows/phone remote control). `--sim` = test indoors without ROS.
+#   Do NOT run alongside other /cmd_vel publishers (drive-mode dual, ros_move_*).
 ```
 
 ## 11. Push to GitHub (only when you decide to)

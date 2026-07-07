@@ -25,8 +25,8 @@ Ubuntu RealSense 設定（首次使用前）：
   realsense-viewer   # 確認相機連接正常
 
 用法：
-  python3 collect_floor_dataset.py                 # 預設每 0.5s 存一張
-  python3 collect_floor_dataset.py --interval 1.0  # 每 1.0s 存一張
+  python3 collect_floor_dataset.py               --interval 1.0  # 預設每 0.5s 存一張
+  python3 collect_floor_dataset.py   # 每 1.0s 存一張
   python3 collect_floor_dataset.py --name lab_floor # session 資料夾加備註名稱
 """
 

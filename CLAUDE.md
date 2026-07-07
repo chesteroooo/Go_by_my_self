@@ -55,11 +55,12 @@ Go_by_my_self/
 │   │   └── ros_move_follow_tag.py      # 依 /target_info 跟隨 tag (PID)
 │   └── new_detect/                     # RealSense D435i 直接連電腦
 │       ├── ros_detect_apriltag.py      # IR 串流 AprilTag 偵測，發布 /target_info
-│       ├── ros_detect_dual.py          # IR(AprilTag)+Color(YOLO 地板) 雙串流
+│       ├── ros_detect_dual.py          # IR(AprilTag)+Color(best.pt 路面分割) 雙串流＋車道置中
 │       ├── ros_move_pair_task.py       # 去程+回程任務控制器 (鍵盤 e-stop，內含 RouteMap)
 │       ├── ros_move_turn_right.py      # 右轉任務：0_2 正上方停車→右轉90°→停在 0_4 前
 │       ├── ros_test_bypass.py          # 障礙繞行測試 (靜止障礙 S 形右繞，深度+光達雙重把關)
 │       ├── ros_test_ground_bypass.py   # 地面 tag 門 + /odom 路徑記憶 + 閉迴路繞障回線
+│       ├── ros_teleop_panel.py         # 遙控面板 → /cmd_vel (預設彈出視窗；--web 瀏覽器 :8765)
 │       ├── route_map.yaml              # 路線地圖設定
 │       ├── aurora/                     # Aurora S 視覺 SLAM 工具（皆獨立、無相依）
 │       │   ├── aurora_slam.launch      # SLAM 包裝 launch (frames 改名 aurora_*，不與 wheeltec TF 衝突)
@@ -116,8 +117,12 @@ do NOT open the camera (they only subscribe to `/target_info`) and pair with a d
 python3 Detect/new_detect/ros_detect_apriltag.py # IR AprilTag 感知節點，發布 /target_info
 python3 Detect/new_detect/ros_move_pair_task.py  # 去程+回程任務控制節點
 
-# 或：同時跑 AprilTag(IR) + YOLO 地板偵測(Color)
-python3 Detect/new_detect/ros_detect_dual.py     # 發布 /target_info 與 /floor_detected
+# 或：同時跑 AprilTag(IR) + best.pt 路面分割(Color) + 車道置中
+# 模型放 Detect/new_detect/best.pt（自動尋找，_model:= 可覆寫）。drive 模式預設開啟但啟動為
+# PAUSE，OpenCV 視窗按 SPACE 開始/暫停置中行駛（此時發 /cmd_vel，勿同時跑 ros_move_*）
+python3 Detect/new_detect/ros_detect_dual.py                 # /target_info /floor_detected /floor_info /cmd_vel
+python3 Detect/new_detect/ros_detect_dual.py _drive:=false   # 純感知，搭配 ros_move_* 控制器
+python3 Detect/new_detect/ros_detect_dual.py _tags:=false    # 關 AprilTag/IR，CPU 全給分割（車道跟隨測試）
 
 # 或（單獨跑，不可與上面同時）：自帶相機的測試節點
 python3 Detect/new_detect/ros_test_bypass.py         # 障礙繞行測試
@@ -162,7 +167,19 @@ Robot Camera → /usb_cam/image_raw → ros_detect.py → /target_info → ros_m
 ```
 D435i IR → ros_detect_apriltag.py → /target_info → ros_move_pair_task.py → /cmd_vel → Robot Motors
                                      /floor_detected ↑ (ros_detect_dual.py only)
+
+ros_detect_dual.py (drive mode):
+D435i IR    → AprilTag         → /target_info
+D435i Color → best.pt road seg → /floor_detected + /floor_info → lane-centering P-control → /cmd_vel
 ```
+
+### /floor_info Message Format (geometry_msgs/Pose — repurposed, ros_detect_dual.py)
+| Field | Meaning |
+|---|---|
+| `orientation.w` | 1.0 = road detected, 0.0 = not |
+| `position.x` | err_norm: road center vs image center, left=−, right=+, in [-1, 1] |
+| `position.y` | heading_norm: far-band vs near-band road centroid (road direction) |
+| `position.z` | Near-band road coverage ratio 0–1 |
 
 ### /target_info Message Format (geometry_msgs/Pose — repurposed fields)
 | Field | Meaning |
@@ -181,7 +198,7 @@ D435i IR → ros_detect_apriltag.py → /target_info → ros_move_pair_task.py �
 - **old_detect/ros_detect.py** — Loads `calib_result.yaml`, undistorts images from `/usb_cam/image_raw`, publishes to `/target_info`.
 - **old_detect/ros_move_follow_tag.py** — PID follower, maintains target distance (0.5 m).
 - **new_detect/ros_detect_apriltag.py** — Reads from RealSense D435i IR stream (global shutter, no jello), publishes to `/target_info`.
-- **new_detect/ros_detect_dual.py** — Dual stream: IR→AprilTag (`/target_info`) + Color→YOLO floor segmentation (`/floor_detected`).
+- **new_detect/ros_detect_dual.py** — Dual stream: IR→AprilTag (`/target_info`) + Color→YOLOv8-seg `best.pt` road segmentation. Publishes `/floor_detected` (Bool) and `/floor_info` (Pose repurposed: `orientation.w`=detected, `position.x`=lane-center offset err_norm, `position.y`=heading_norm, `position.z`=road coverage). YOLO runs in a worker thread (CPU ~120-190 ms @ imgsz 320) so the 30 fps AprilTag loop never blocks; the road class id is auto-resolved from `model.names` (dataset classes: 0=grass, 1=road, 2=sidewalk). Drive mode (default on, `_drive:=false` to disable) does lane-centering P-control on `/cmd_vel`: starts PAUSED, SPACE toggles run/pause, auto-stops when road coverage < `MIN_ROAD_COVER` or the seg result is stale.
 - **new_detect/ros_move_pair_task.py** — Outbound+return task controller (state machine, keyboard e-stop). Defines `RouteMap` (reads `route_map.yaml`, pair→location lookup + BFS), reused by `ros_move_turn_right.py`.
 - **new_detect/ros_test_ground_bypass.py** — Self-contained (IR+Depth): ground-gate steering, `/odom` path-line memory across blind gaps, closed-loop depth+lidar obstacle bypass that returns to the remembered line.
 - **new_detect/aurora/aurora_slam.launch** — Wrapper for the SLAMTEC Aurora S ROS SDK (`slamware_ros_sdk`, built in `~/aurora_ros`). Runs the vendor node with all frames renamed `aurora_*` so its SLAM TF tree stays independent of the wheeltec tree. Primary localization for the autonomous-driving goal; fusion of its point cloud into `base_link` (mount offset 0.15 m fwd / 0 / 0.45 m up) is a later step (see the commented block at the bottom of the launch).
@@ -198,3 +215,7 @@ D435i IR → ros_detect_apriltag.py → /target_info → ros_move_pair_task.py �
 | new_detect/ros_test_ground_bypass.py | `DODGE_OFFSET` | 0.45 m | Rightward shift when bypassing (keep inside lane) |
 | new_detect/ros_detect_apriltag.py | `TAG_SIZE_M` | 0.11 m | Printed tag side length (must match reality) |
 | new_detect/ros_detect_apriltag.py | `W` / `H` / `FPS` | 1280/720/30 | IR stream resolution & frame rate |
+| new_detect/ros_detect_dual.py | `LANE_SPEED_V` | 0.15 | Lane-centering cruise speed |
+| new_detect/ros_detect_dual.py | `KP_CENTER` / `KP_HEADING` | 0.35 / 0.20 | err_norm / heading_norm → angular.z gains |
+| new_detect/ros_detect_dual.py | `MIN_ROAD_COVER` | 0.10 | Near-band road coverage below this = road lost → stop |
+| new_detect/ros_detect_dual.py | `YOLO_IMGSZ` | 320 | Seg inference size; larger = slower on CPU |
