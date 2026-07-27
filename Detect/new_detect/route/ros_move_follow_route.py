@@ -31,7 +31,7 @@ from pathlib import Path
 import numpy as np
 
 # ------------------------------------------------------------ 參數
-MAX_SPEED_V = 0.2        # 巡航速度 (m/s) — 比照 ros_move_pair_task.py
+MAX_SPEED_V = 0.6        # 巡航速度 (m/s) = 60 cm/s（原 0.2；現場測試提速）
 MAX_TURN_W = 0.6         # 角速度上限 (rad/s)
 LOOKAHEAD = 0.8          # pure pursuit 前視距離 (m)
 GOAL_TOL = 0.3           # 到達判定 (m)

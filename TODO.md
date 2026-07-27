@@ -98,11 +98,11 @@
 6. [ ] **A→B 第二趟**（同方向第二次經過 → 產生同向迴環，鎖緊去程層）
 7. [ ] 到 B：再 360° 一圈
 8. [ ] **B→A 第二趟**
-9. [ ] 回 A、車頭朝出發方向、靜止幾秒 → `aurora_map.sh save ~/maps/compus3.stcm`
+9. [ ] 回 A、車頭朝出發方向、靜止幾秒 → `aurora_map.sh save ~/maps/compus4.stcm`
 10. [ ] 途中若 `aurora_status` 顯示追蹤丟失：原地停住、緩慢左右擺動待恢復，再繼續
 
 ### 驗收（回來後做）
-- [ ] `python3 Detect/new_detect/route/extract_route.py ~/maps/compus3.stcm --out routes_compus3 --png`
+- [ ] `python3 Detect/new_detect/route/extract_route.py ~/maps/compus4.stcm --out routes_compus4 --png`
       → 預覽圖應是乾淨的兩圈、無碎段
 - [ ] 給 Claude 跑「回程地標重用率＋方向層間隙」驗證：
       **目標：回程 KF 重用率明顯 >0%、兩方向軌跡間隙 < 1 m**（compus1.2 是 0% / 3.9 m）

@@ -22,6 +22,7 @@ route_graph.py — 路線圖（站點 + 示教路段）規劃器
 
 import argparse
 import heapq
+import re
 import sys
 from pathlib import Path
 
@@ -65,20 +66,33 @@ def nearest_idx(pass_, xy):
     return i, float(d[i])
 
 
-def build_graph(passes, stations, snap_radius, allow_reverse=False):
+def build_graph(passes, stations, snap_radius, allow_reverse=False, loose_junctions=False):
     """回傳 edges: list of dict{u, v, pass_id, i0, i1, length, reverse}"""
     edges = []
 
     # 站點吸附：每條 pass 上，站點依里程排序，相鄰兩站成一條有向邊
+    # 接續點（_pXstart/_pXend）只吸附到自己的 pass —— 吸到幾何重疊的別條 pass
+    # 會讓 Dijkstra 跨圖層抄捷徑，產生 >1 m 的座標跳點（follower 會急停）
+    junc_re = re.compile(r"^_p(\d+)(?:start|end)$")
     for p in passes:
         on_pass = []
         for name, xy in stations.items():
+            jm = junc_re.match(name)
+            if jm and int(jm.group(1)) != p["id"] and not loose_junctions:
+                continue
             i, d = nearest_idx(p, xy)
             if d <= snap_radius:
                 on_pass.append((i, name))
         on_pass.sort()
         for (i0, u), (i1, v) in zip(on_pass[:-1], on_pass[1:]):
-            if i1 <= i0:
+            if i1 < i0:
+                continue
+            if i1 == i0:
+                # 兩站吸附到同一路徑點（例如折返點 = 前一 pass 終點 = 下一 pass 起點）
+                # → 互為別名，補雙向零長度邊，否則該站會變成死路
+                for uu, vv in ((u, v), (v, u)):
+                    edges.append({"u": uu, "v": vv, "pass_id": p["id"],
+                                  "i0": i0, "i1": i1, "length": 0.0, "reverse": False})
                 continue
             L = p["cum"][i1] - p["cum"][i0]
             edges.append({"u": u, "v": v, "pass_id": p["id"],
@@ -104,7 +118,7 @@ def build_graph(passes, stations, snap_radius, allow_reverse=False):
     return edges
 
 
-def rebuild_with_junctions(passes, stations, snap_radius, allow_reverse):
+def rebuild_with_junctions(passes, stations, snap_radius, allow_reverse, loose_junctions=False):
     """先把 pass 間的接續點加進站點集，再建完整的邊圖。"""
     st2 = dict(stations)
     for pa in passes:
@@ -114,7 +128,7 @@ def rebuild_with_junctions(passes, stations, snap_radius, allow_reverse):
             if np.linalg.norm(pa["wp"][-1, :2] - pb["wp"][0, :2]) < CONNECT_M:
                 st2[f"_p{pa['id']}end"] = pa["wp"][-1, :2].copy()
                 st2[f"_p{pb['id']}start"] = pb["wp"][0, :2].copy()
-    edges = build_graph(passes, st2, snap_radius, allow_reverse)
+    edges = build_graph(passes, st2, snap_radius, allow_reverse, loose_junctions)
     return st2, edges
 
 
@@ -191,7 +205,8 @@ def cmd_stations_init(args):
 def cmd_info(args):
     passes = load_passes(args.routes)
     stations, snap = load_stations(args.stations or Path(args.routes) / "stations.yaml")
-    st2, edges = rebuild_with_junctions(passes, stations, snap, args.allow_reverse)
+    st2, edges = rebuild_with_junctions(passes, stations, snap, args.allow_reverse,
+                                        args.loose_junctions)
     print(f"passes: {len(passes)}   stations: {list(stations)}")
     for e in edges:
         tag = "（逆向,×3成本）" if e["reverse"] else ""
@@ -202,7 +217,8 @@ def cmd_info(args):
 def cmd_plan(args):
     passes = load_passes(args.routes)
     stations, snap = load_stations(args.stations or Path(args.routes) / "stations.yaml")
-    st2, edges = rebuild_with_junctions(passes, stations, snap, args.allow_reverse)
+    st2, edges = rebuild_with_junctions(passes, stations, snap, args.allow_reverse,
+                                        args.loose_junctions)
 
     hops = [args.src] + (args.via or []) + [args.dst]
     edge_seq = []
@@ -278,7 +294,10 @@ def main():
     sub = ap.add_subparsers(dest="cmd", required=True)
     common = dict(routes=lambda p: p.add_argument("--routes", default="routes"),
                   stations=lambda p: p.add_argument("--stations", default=None),
-                  rev=lambda p: p.add_argument("--allow-reverse", action="store_true"))
+                  rev=lambda p: (p.add_argument("--allow-reverse", action="store_true"),
+                                 p.add_argument("--loose-junctions", action="store_true",
+                                     help="允許接續點吸附到別條 pass（舊行為）：可跨層縫合斷掉的"
+                                          "示教鏈（如 routes_compus4），但重疊路段可能產生跳點")))
 
     p = sub.add_parser("stations-init"); common["routes"](p)
     p.set_defaults(fn=cmd_stations_init)

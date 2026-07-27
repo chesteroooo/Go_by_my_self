@@ -2,8 +2,9 @@
 # =============================================================================
 # field_test.sh — 一鍵現場測試（單一終端跑完整流程）
 #
-#   ./field_test.sh                 # 用預設地圖 ~/maps/test3.stcm
-#   MAP=~/maps/compus1.2.stcm ./field_test.sh    # 想用舊圖就覆寫 MAP
+#   ./field_test.sh                 # ★正常就這樣跑：用預設地圖 ~/maps/compus5.2.stcm
+#   MAP=~/maps/<其他地圖>.stcm ./field_test.sh   # 只有想換別張圖時才加 MAP= 前綴
+#     （注意：整行連 MAP= 一起複製 = 會載到那張圖，不是 compus5.2！）
 #
 # 依序自動完成：
 #   0. 連線檢查（機器人 WiFi / Aurora 乙太網 / 地圖檔）
@@ -23,8 +24,8 @@ set -u
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"      # Go_by_my_self
 ROUTE_DIR="$ROOT/Detect/new_detect/route"
 AURORA_DIR="$ROOT/Detect/new_detect/aurora"
-PLANS="$ROUTE_DIR/routes_test3"
-MAP="${MAP:-$HOME/maps/test3.stcm}"
+PLANS="$ROUTE_DIR/routes_compus5_2"
+MAP="${MAP:-$HOME/maps/compus5.2.stcm}"
 BAGDIR="$HOME/aurora_bags"
 TS=$(date +%m%d_%H%M)
 LOG="$BAGDIR/logs_$TS"
@@ -175,16 +176,15 @@ BAG_PID=$!
 echo "✓ 錄到 $BAGDIR/test_$TS.bag"
 
 say "3.5/6 即時儀表板（唯讀，會彈出視窗）"
-# 只訂閱不發 /cmd_vel，可與駕駛節點同時跑。底圖來自 Aurora 即時地圖，
-# 換 test3 不用改設定；routes_test3 的路線疊圖等你抽好路徑就會自動出現。
-python3 "$ROUTE_DIR/route_monitor.py" --routes routes_test3 >"$LOG/monitor.log" 2>&1 &
+# 只訂閱不發 /cmd_vel，可與駕駛節點同時跑。底圖來自 Aurora 即時地圖。
+python3 "$ROUTE_DIR/route_monitor.py" --routes routes_compus5_2 >"$LOG/monitor.log" 2>&1 &
 MON_PID=$!
 echo "✓ 儀表板已啟動（Tk 視窗；無畫面/出錯會自動退回網頁，URL 見 $LOG/monitor.log）"
 
 say "4/6 載入地圖"
 read -rp "車放 A 點、車頭朝路線方向後按 Enter 載圖（這次開機已載過就輸入 s 跳過）: " ans
 if [ "$ans" != "s" ]; then
-    echo "上傳中（409MB 約 75 秒，期間位姿暫停是正常的）…"
+    echo "上傳中（693MB 約 130 秒，期間位姿暫停是正常的）…"
     "$AURORA_DIR/aurora_map.sh" load "$MAP" || die "載圖失敗"
     echo -n "等位姿恢復"
     for _ in $(seq 1 60); do pose_alive && break; echo -n .; done; echo
@@ -199,19 +199,16 @@ say "6/6 行駛選單"
 while true; do
     echo
     echo "──────────────────────────────────"
-    echo " 1) 去程 A→M1（144.3 m）"
-    echo " 2) 回程 M1→A（136.7 m，先遙控原地掉頭再選）"
-    echo " 3) 全程 A→B（選配，風險見 TODO.md）"
-    echo " 4) 全程 B→A（選配）"
+    echo " 1) 去程 A→B（507 m，原點沿走廊到最遠折返點）"
+    echo " 2) 回程 B→C（515 m，先在 B 遙控原地掉頭再選；⚠回程走南側斜路，"
+    echo "     終點 C(15,-75) 離 A 還有 ~76 m —— C 之後請遙控）"
     echo " s) 位姿/狀態快照      r) 重新重定位"
     echo " q) 結束（自動關 bag＋跑分析）"
     echo "──────────────────────────────────"
     read -rp "> " c
     case "$c" in
-        1) drive "$PLANS/plan_A_M1.csv" ;;
-        2) drive "$PLANS/plan_M1_A.csv" ;;
-        3) drive "$PLANS/plan_A_B.csv" ;;
-        4) drive "$PLANS/plan_B_A.csv" ;;
+        1) drive "$PLANS/plan_A_B.csv" ;;
+        2) drive "$PLANS/plan_B_C.csv" ;;
         s) snapshot ;;
         r) do_reloc ;;
         q) break ;;

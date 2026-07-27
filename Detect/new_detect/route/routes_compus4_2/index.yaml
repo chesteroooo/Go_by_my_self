@@ -1,0 +1,86 @@
+source: /home/im27car/maps/compus4.2.stcm
+passes:
+- file: pass_00.csv
+  n_wp: 172
+  length_m: 43.6
+  start:
+  - 0.1
+  - -0.6
+  end:
+  - -25.1
+  - 10.0
+  kf_range:
+  - 0
+  - 1406
+- file: pass_01.csv
+  n_wp: 105
+  length_m: 21.9
+  start:
+  - 2.3
+  - 6.0
+  end:
+  - -6.2
+  - 12.5
+  kf_range:
+  - 2527
+  - 3813
+- file: pass_02.csv
+  n_wp: 775
+  length_m: 168.4
+  start:
+  - -6.2
+  - 12.5
+  end:
+  - -50.8
+  - -31.7
+  kf_range:
+  - 3814
+  - 7562
+- file: pass_03.csv
+  n_wp: 1354
+  length_m: 394.8
+  start:
+  - -50.7
+  - -31.7
+  end:
+  - 290.8
+  - -0.5
+  kf_range:
+  - 7691
+  - 13009
+- file: pass_04.csv
+  n_wp: 134
+  length_m: 58.4
+  start:
+  - 290.8
+  - -0.5
+  end:
+  - 242.7
+  - 0.6
+  kf_range:
+  - 13013
+  - 13865
+- file: pass_05.csv
+  n_wp: 97
+  length_m: 26.2
+  start:
+  - 242.5
+  - 0.5
+  end:
+  - 243.2
+  - -21.5
+  kf_range:
+  - 13868
+  - 14072
+- file: pass_06.csv
+  n_wp: 199
+  length_m: 103.1
+  start:
+  - 243.2
+  - -20.8
+  end:
+  - 147.9
+  - -22.8
+  kf_range:
+  - 14077
+  - 14939

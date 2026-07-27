@@ -1,0 +1,38 @@
+source: /home/im27car/maps/compus4.stcm
+passes:
+- file: pass_00.csv
+  n_wp: 64
+  length_m: 19.1
+  start:
+  - 0.1
+  - -0.0
+  end:
+  - -4.6
+  - -11.3
+  kf_range:
+  - 0
+  - 2387
+- file: pass_01.csv
+  n_wp: 387
+  length_m: 163.9
+  start:
+  - -7.3
+  - -4.7
+  end:
+  - -0.3
+  - -22.9
+  kf_range:
+  - 2651
+  - 4330
+- file: pass_02.csv
+  n_wp: 109
+  length_m: 31.8
+  start:
+  - -0.3
+  - -22.8
+  end:
+  - 0.6
+  - 0.1
+  kf_range:
+  - 4454
+  - 4872

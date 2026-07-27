@@ -121,24 +121,34 @@ def disable_ir_emitter(profile: rs.pipeline_profile):
 
 
 def find_model_path():
-    """尋找 best.pt：優先用 ~model 參數，否則在 new_detect 底下找。"""
+    """尋找分割模型：優先用 ~model 參數，否則在 new_detect 底下找 best3.pt → best.pt。"""
     param = rospy.get_param("~model", "")
     if param:
         return os.path.expanduser(param)
     here = os.path.dirname(os.path.abspath(__file__))
     candidates = [
+        # 有 TensorRT engine 就優先用（Orin GPU 上最快）；否則用 .pt
+        os.path.join(here, "best3.engine"),
+        os.path.join(here, "best.engine"),
+        os.path.join(here, "best3.pt"),
         os.path.join(here, "best.pt"),
+        os.path.join(here, "segmentation", "best3.pt"),
         os.path.join(here, "segmentation", "best.pt"),
     ]
     for c in candidates:
         if os.path.isfile(c):
             return c
-    hits = sorted(glob.glob(os.path.join(here, "**", "best.pt"), recursive=True))
+    hits = sorted(glob.glob(os.path.join(here, "**", "best*.engine"), recursive=True)) or \
+           sorted(glob.glob(os.path.join(here, "**", "best*.pt"), recursive=True))
     return hits[0] if hits else candidates[0]
 
 
 def load_yolo(model_path: str):
-    """載入 YOLO segmentation 模型並找出 road class id，失敗時回傳 (None, None)。"""
+    """載入 YOLO segmentation 模型並找出所有 road class id，失敗時回傳 (None, None)。
+
+    模型可能有一個以上名為 'road' 的類別
+    （best3.pt: {0:'road', 1:'grass', 2:'road', 3:'sidewalk'}），全部都算路面，回傳 id 的 set。
+    """
     try:
         from ultralytics import YOLO
     except ImportError:
@@ -149,15 +159,13 @@ def load_yolo(model_path: str):
         return None, None
     model = YOLO(model_path)
     names = model.names if isinstance(model.names, dict) else dict(enumerate(model.names))
-    road_id = FLOOR_CLASS_ID
-    for cid, name in names.items():
-        if str(name).lower() in (ROAD_CLASS_NAME, "floor"):
-            road_id = int(cid)
-            break
-    else:
+    road_ids = {int(cid) for cid, name in names.items()
+                if str(name).lower() in (ROAD_CLASS_NAME, "floor")}
+    if not road_ids:
+        road_ids = {FLOOR_CLASS_ID}
         rospy.logwarn(f"模型類別 {names} 中沒有 '{ROAD_CLASS_NAME}'，改用 class id {FLOOR_CLASS_ID}")
-    rospy.loginfo(f"YOLO 模型載入成功：{model_path}  classes={names}  road_id={road_id}")
-    return model, road_id
+    rospy.loginfo(f"YOLO 模型載入成功：{model_path}  classes={names}  road_ids={sorted(road_ids)}")
+    return model, road_ids
 
 
 class SegWorker(threading.Thread):
@@ -166,11 +174,13 @@ class SegWorker(threading.Thread):
     主迴圈用 submit() 丟最新彩色影格（latest-wins），用 latest() 取最近一次結果。
     """
 
-    def __init__(self, model, road_id, n_threads=YOLO_THREADS):
+    def __init__(self, model, road_ids, n_threads=YOLO_THREADS, device="cpu", imgsz=YOLO_IMGSZ):
         super().__init__(daemon=True)
         self.model     = model
-        self.road_id   = road_id
+        self.road_ids  = set(road_ids)   # 可能有多個 road 類別，全部算路面
         self.n_threads = n_threads
+        self.device    = device          # "0"=GPU（Orin）, "cpu"=N100
+        self.imgsz     = imgsz
         self._lock    = threading.Lock()
         self._event   = threading.Event()
         self._stop    = threading.Event()
@@ -191,11 +201,13 @@ class SegWorker(threading.Thread):
         self._event.set()
 
     def run(self):
-        try:
-            import torch
-            torch.set_num_threads(self.n_threads)   # 4 核 N100：留核心給 AprilTag/主迴圈
-        except Exception:
-            pass
+        # 只有 CPU 推論才需要限制 torch 執行緒（跟 AprilTag 分核）；GPU 上 seg 不佔 CPU 核
+        if str(self.device) in ("cpu", "-1", ""):
+            try:
+                import torch
+                torch.set_num_threads(self.n_threads)   # 4 核 N100：留核心給 AprilTag/主迴圈
+            except Exception:
+                pass
         while not self._stop.is_set():
             self._event.wait()
             self._event.clear()
@@ -207,7 +219,8 @@ class SegWorker(threading.Thread):
                 continue
             t0 = time.time()
             try:
-                res = self.model(frame, verbose=False, conf=YOLO_CONF, imgsz=YOLO_IMGSZ)[0]
+                res = self.model(frame, verbose=False, conf=YOLO_CONF,
+                                 imgsz=self.imgsz, device=self.device)[0]
             except Exception as e:
                 rospy.logwarn_throttle(5.0, f"YOLO 推論失敗: {e}")
                 continue
@@ -215,7 +228,7 @@ class SegWorker(threading.Thread):
             mask = np.zeros((h, w), dtype=np.uint8)
             if res.masks is not None:
                 for i, cls in enumerate(res.boxes.cls):
-                    if int(cls) == self.road_id:
+                    if int(cls) in self.road_ids:
                         m = res.masks.data[i].cpu().numpy().astype(np.uint8)
                         mask |= cv2.resize(m, (w, h), interpolation=cv2.INTER_NEAREST)
             with self._lock:
@@ -262,6 +275,13 @@ def main():
     # _tags:=false → 完全跳過 AprilTag（不開 IR 串流），整台 CPU 給 YOLO（純車道跟隨測試用）
     use_tags = bool(rospy.get_param("~tags", True))
 
+    # 無顯示器（SSH）自動走無視窗模式；_gui:=false 可強制關視窗。
+    # headless 下不開 OpenCV 視窗、不讀鍵盤（drive 模式的 SPACE 需有視窗的桌面）。
+    gui = bool(rospy.get_param("~gui", True)) and bool(os.environ.get("DISPLAY"))
+    if not gui:
+        rospy.loginfo("headless 模式（無 $DISPLAY 或 _gui:=false）：不開視窗、不讀鍵盤，只發布 topic。"
+                      "要看畫面/用 SPACE 置中，請在 Jetson 桌面（螢幕或遠端桌面）執行。")
+
     detector = pd = None
     if use_tags:
         detector = Detector(
@@ -278,12 +298,29 @@ def main():
         rospy.loginfo("AprilTag 關閉（~tags=false）：不開 IR 串流，CPU 全給路面分割")
 
     model_path      = find_model_path()
-    yolo, road_id   = load_yolo(model_path)
+    yolo, road_ids  = load_yolo(model_path)
+
+    # 推論裝置：~device 可覆寫（"0"=GPU / "cpu"）；預設自動偵測（Orin 有 CUDA 用 GPU，N100 用 CPU）
+    device = str(rospy.get_param("~device", "")).strip()
+    if not device:
+        try:
+            import torch
+            device = "0" if torch.cuda.is_available() else "cpu"
+        except Exception:
+            device = "cpu"
+    imgsz  = int(rospy.get_param("~imgsz", YOLO_IMGSZ))
+    on_gpu = str(device) not in ("cpu", "-1", "")
+
     seg_worker      = None
     if yolo is not None:
-        n_thr = YOLO_THREADS if use_tags else max(YOLO_THREADS, (os.cpu_count() or 4) - 1)
-        seg_worker = SegWorker(yolo, road_id, n_thr)
+        # GPU 上 seg 不佔 CPU 核 → 不需 N100 的 2+2 分核；CPU 上才留核心給 AprilTag
+        if on_gpu:
+            n_thr = os.cpu_count() or 4
+        else:
+            n_thr = YOLO_THREADS if use_tags else max(YOLO_THREADS, (os.cpu_count() or 4) - 1)
+        seg_worker = SegWorker(yolo, road_ids, n_thr, device=device, imgsz=imgsz)
         seg_worker.start()
+        rospy.loginfo(f"YOLO 裝置={device}  imgsz={imgsz}  ({'GPU' if on_gpu else 'CPU'})")
 
     drive_enabled = bool(rospy.get_param("~drive", True))
 
@@ -315,14 +352,16 @@ def main():
 
     if use_tags:
         ir_params, K_ir, ir_w = get_intrinsics(profile, rs.stream.infrared, IR_INDEX)
-        cv2.namedWindow("AprilTag (IR)", cv2.WINDOW_AUTOSIZE)
-        cv2.moveWindow("AprilTag (IR)", 50, 50)
+        if gui:
+            cv2.namedWindow("AprilTag (IR)", cv2.WINDOW_AUTOSIZE)
+            cv2.moveWindow("AprilTag (IR)", 50, 50)
         rospy.loginfo(f"IR {IR_W}x{IR_H}  Color {COLOR_W}x{COLOR_H}  @ {FPS}fps")
     else:
         rospy.loginfo(f"Color {COLOR_W}x{COLOR_H} @ {FPS}fps（IR 關閉）")
 
-    cv2.namedWindow("Floor (Color)", cv2.WINDOW_AUTOSIZE)
-    cv2.moveWindow("Floor (Color)", 50 + 640 + 30, 50)
+    if gui:
+        cv2.namedWindow("Floor (Color)", cv2.WINDOW_AUTOSIZE)
+        cv2.moveWindow("Floor (Color)", 50 + 640 + 30, 50)
 
     rate       = rospy.Rate(FPS)
     fps_ir,  t_ir  = 0.0, time.time()
@@ -399,7 +438,8 @@ def main():
                 fps_ir, t_ir = smooth_fps(fps_ir, t_ir)
                 cv2.putText(vis_ir, f"FPS={fps_ir:4.1f}  tags={len(results)} pairs={len(pairs)}",
                             (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2, cv2.LINE_AA)
-                cv2.imshow("AprilTag (IR)", cv2.resize(vis_ir, (640, 360)))
+                if gui:
+                    cv2.imshow("AprilTag (IR)", cv2.resize(vis_ir, (640, 360)))
 
             # ============ Color → YOLO-seg → 車道置中 ============
             if color_frame:
@@ -482,14 +522,16 @@ def main():
                 seg_ms = f" seg={seg['infer_ms']:.0f}ms" if seg else ""
                 cv2.putText(color, f"FPS={fps_rgb:4.1f} {label} [{mode}]{seg_ms}",
                             (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.6, lcolor, 2, cv2.LINE_AA)
-                cv2.imshow("Floor (Color)", color)
+                if gui:
+                    cv2.imshow("Floor (Color)", color)
 
-            key = cv2.waitKey(1) & 0xFF
-            if key == ord("q"):
-                break
-            if key == ord(" ") and cmd_pub is not None:
-                driving = not driving
-                rospy.loginfo(f"[CENTER] {'開始行駛' if driving else '暫停（停車）'}")
+            if gui:
+                key = cv2.waitKey(1) & 0xFF
+                if key == ord("q"):
+                    break
+                if key == ord(" ") and cmd_pub is not None:
+                    driving = not driving
+                    rospy.loginfo(f"[CENTER] {'開始行駛' if driving else '暫停（停車）'}")
 
             rate.sleep()
     finally:
