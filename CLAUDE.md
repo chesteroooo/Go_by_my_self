@@ -23,6 +23,19 @@ the car centred on the segmented road and constrain heading so lateral/heading d
 even when the SLAM pose is weak. This builds on the existing floor-segmentation work
 (`ros_detect_dual.py`, `collect_floor_dataset.py`).
 
+## Current Focus — TANet Paper (deadline 2026-08-15)
+
+**Read `paper/PLAN.md` before working on anything paper-related — it is the single source of
+truth for the plan, schedule, and experiment design.** Summary: a lightweight VLM (4-bit GGUF,
+llama.cpp) running on a **QCS6490 board (Ubuntu)** acts as an event-triggered scene-state
+supervisor — it detects the visual-SLAM degradation zones (the open brick corridor above) from
+single frames. Ground truth is derived from recorded rosbag SLAM telemetry via
+`analyze_aurora_bag.py`, not hand labels. The QCS6490 is framed as the **target platform to
+replace the onboard x86 PC** (Aurora computes SLAM on-device; the wheeltec base has its own
+controller). Main results = accuracy × latency × power on QCS6490, vs the onboard PC (no GPU,
+compare perf/watt) and cloud Gemini (the field 5G private network has no internet — cite as
+edge motivation). Monitoring VQA (what blocks the path / alert?) is a qualitative demo only.
+
 ## Environment Setup
 
 ROS Noetic must be sourced before running any ROS nodes:
