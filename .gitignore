@@ -52,3 +52,9 @@ Thumbs.db
 
 # SLAM 地圖（大檔，存 ~/maps/）
 *.stcm
+
+# 第三方 SDK 原始碼（自行 clone，不進 repo）
+librealsense/
+
+# Claude Code 本機設定（含本機絕對路徑，換機會衝突）
+.claude/settings.local.json

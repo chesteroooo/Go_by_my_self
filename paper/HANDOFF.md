@@ -41,14 +41,29 @@ python3 paper/b1_geometry.py                          # 能跑完就代表深度
 
 ### 1-C 模型檔（`Detect/new_detect/models/`，也被 gitignore 擋掉，要一起傳）
 
-| 檔案 | 用途 | md5 |
+| 檔案 | 類別 | 用途 |
 |---|---|---|
-| `best_paper.pt` | **分析用**的路面分割模型（= 舊的 `best3.pt`）。走廊寬度實測、圖 2 動機示例都用這顆 | `21aab7c9…` |
-| `best_field_jetson.pt` | **現場拍攝當下** Jetson 上跑的那顆，`seg_vis/` 是它產生的 | `250b677f…` |
-| `yolov8n.pt` | B2 的 COCO 偵測器（也可讓 ultralytics 自動下載） | — |
+| **`best_field_jetson.pt`** | `{0:grass, 1:road, 2:sidewalk}` | ★ **全篇一律用這顆**。現場拍攝時 Jetson 上跑的就是它，`seg_vis/` 由它產生 |
+| `best_paper.pt` | `{0:road, 1:grass, 2:road, 3:sidewalk}` | 僅保留備查（= 舊的 `best3.pt`）。**不要用於任何分析** |
+| `yolov8n.pt` | COCO 80 類 | B2 的偵測器（也可讓 ultralytics 自動下載）|
 
-> ⚠️ **兩顆 `best.pt` 不是同一個模型。** 資料集裡的 `seg_vis/` 來自 `best_field_jetson.pt`；
-> 之後若要重跑分割分析，**明確指定要用哪一顆並在論文寫清楚**，不要混用。
+> **為什麼統一用 field 那顆（2026-08-06 定案）：**
+> 1. **資料集裡的 `seg_vis/` 是它產生的** —— 換模型就跟已存的疊圖對不上
+> 2. **它的類別定義才是文件記載的那組**（`0=grass, 1=road, 2=sidewalk`）。
+>    `best_paper.pt` 有**兩個都叫 `road` 的類別**（id 0 與 2），是訓練產生的瑕疵，分析時容易漏算
+> 3. 論文只需要描述一個模型
+>
+> **已驗證換模型不影響既有結論** —— 用兩顆分別量走廊寬度：
+>
+> | | 2 m 處 | 3 m 處 |
+> |---|---|---|
+> | `best_paper.pt` | 184 cm | 204 cm |
+> | `best_field_jetson.pt` | 183 cm | 202 cm |
+>
+> 差 1–2 cm，`W_CORRIDOR = 1.80 m` 不變。
+>
+> ⚠️ 分析時**明確指定路徑**，不要依賴自動尋找 —— `Detect/new_detect/best.pt` 是機器人節點用的
+> 那顆（內容同 `best_paper.pt`），不是這裡要用的。
 
 ### 1-D Python 環境
 
