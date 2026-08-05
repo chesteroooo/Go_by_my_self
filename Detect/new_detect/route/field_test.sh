@@ -2,9 +2,10 @@
 # =============================================================================
 # field_test.sh — 一鍵現場測試（單一終端跑完整流程）
 #
-#   ./field_test.sh                 # ★正常就這樣跑：用預設地圖 ~/maps/compus5.2.stcm
-#   MAP=~/maps/<其他地圖>.stcm ./field_test.sh   # 只有想換別張圖時才加 MAP= 前綴
-#     （注意：整行連 MAP= 一起複製 = 會載到那張圖，不是 compus5.2！）
+#   ./field_test.sh                 # ★正常就這樣跑：用預設地圖 ~/maps/A_D.stcm
+#   MAP=~/maps/compus5.2.stcm PLANS=routes_compus5_2 ./field_test.sh   # 換別張圖
+#     ⚠ MAP 和 PLANS 必須是同一張圖 —— 不同 .stcm 的座標系不通用，
+#       混用會把車開到完全錯的地方。腳本啟動時會擋下不一致的組合。
 #
 # 依序自動完成：
 #   0. 連線檢查（機器人 WiFi / Aurora 乙太網 / 地圖檔）
@@ -24,8 +25,9 @@ set -u
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"      # Go_by_my_self
 ROUTE_DIR="$ROOT/Detect/new_detect/route"
 AURORA_DIR="$ROOT/Detect/new_detect/aurora"
-PLANS="$ROUTE_DIR/routes_compus5_2"
-MAP="${MAP:-$HOME/maps/compus5.2.stcm}"
+PLANS="${PLANS:-$ROUTE_DIR/routes_A_D}"
+[ -d "$PLANS" ] || PLANS="$ROUTE_DIR/$PLANS"          # 允許只給資料夾名
+MAP="${MAP:-$HOME/maps/A_D.stcm}"
 BAGDIR="$HOME/aurora_bags"
 TS=$(date +%m%d_%H%M)
 LOG="$BAGDIR/logs_$TS"
@@ -139,6 +141,14 @@ snapshot() {
 # ================================================================ 主流程
 say "0/6 連線檢查"
 [ -f "$MAP" ] || die "找不到地圖 $MAP"
+[ -d "$PLANS" ] || die "找不到路線資料夾 $PLANS"
+# 路線與地圖必須出自同一張 .stcm —— 不同 session 的座標系不通用
+PLAN_SRC=$(awk '/^source:/{print $2; exit}' "$PLANS/index.yaml" 2>/dev/null)
+PLAN_SRC="${PLAN_SRC##*[\\/]}"          # 有些舊 index.yaml 存的是 Windows 路徑
+if [ -n "$PLAN_SRC" ] && [ "$PLAN_SRC" != "$(basename "$MAP")" ]; then
+    die "路線 $(basename "$PLANS") 抽自 $PLAN_SRC，但要載的是 $(basename "$MAP")。
+   座標系不通用，車會照著別張圖的座標亂開。請讓 MAP= 和 PLANS= 一致。"
+fi
 ping -c1 -W2 10.0.11.2   >/dev/null || die "連不上機器人 10.0.11.2（WiFi 網卡接了嗎？）"
 ping -c1 -W2 192.168.11.1 >/dev/null || die "連不上 Aurora 192.168.11.1（乙太網路線？）"
 echo "✓ 地圖 $MAP／機器人／Aurora 都通"
@@ -177,14 +187,14 @@ echo "✓ 錄到 $BAGDIR/test_$TS.bag"
 
 say "3.5/6 即時儀表板（唯讀，會彈出視窗）"
 # 只訂閱不發 /cmd_vel，可與駕駛節點同時跑。底圖來自 Aurora 即時地圖。
-python3 "$ROUTE_DIR/route_monitor.py" --routes routes_compus5_2 >"$LOG/monitor.log" 2>&1 &
+python3 "$ROUTE_DIR/route_monitor.py" --routes "$PLANS" >"$LOG/monitor.log" 2>&1 &
 MON_PID=$!
 echo "✓ 儀表板已啟動（Tk 視窗；無畫面/出錯會自動退回網頁，URL 見 $LOG/monitor.log）"
 
 say "4/6 載入地圖"
 read -rp "車放 A 點、車頭朝路線方向後按 Enter 載圖（這次開機已載過就輸入 s 跳過）: " ans
 if [ "$ans" != "s" ]; then
-    echo "上傳中（693MB 約 130 秒，期間位姿暫停是正常的）…"
+    echo "上傳中（$(du -h "$MAP" | cut -f1)，約 $(( $(stat -c%s "$MAP") / 5000000 )) 秒，期間位姿暫停是正常的）…"
     "$AURORA_DIR/aurora_map.sh" load "$MAP" || die "載圖失敗"
     echo -n "等位姿恢復"
     for _ in $(seq 1 60); do pose_alive && break; echo -n .; done; echo
@@ -196,22 +206,30 @@ fi
 do_reloc || die "沒有重定位成功就不能自動駕駛（0706 的教訓）"
 
 say "6/6 行駛選單"
+# 選單由 $PLANS/plan_*.csv 自動產生 —— 換地圖/加路線都不必再改這支腳本
+mapfile -t PLANFILES < <(ls "$PLANS"/plan_*.csv 2>/dev/null)
+[ ${#PLANFILES[@]} -eq 0 ] && die "$PLANS 裡沒有任何 plan_*.csv"
 while true; do
     echo
     echo "──────────────────────────────────"
-    echo " 1) 去程 A→B（507 m，原點沿走廊到最遠折返點）"
-    echo " 2) 回程 B→C（515 m，先在 B 遙控原地掉頭再選；⚠回程走南側斜路，"
-    echo "     終點 C(15,-75) 離 A 還有 ~76 m —— C 之後請遙控）"
+    echo " 地圖 $(basename "$MAP")   路線 $(basename "$PLANS")"
+    for i in "${!PLANFILES[@]}"; do
+        # 第一行註解就是「路線 A→D, 433.7 m …」
+        echo " $((i+1))) $(head -1 "${PLANFILES[$i]}" | sed 's/^# *//; s/ *(x,y,yaw_rad)//')"
+    done
     echo " s) 位姿/狀態快照      r) 重新重定位"
     echo " q) 結束（自動關 bag＋跑分析）"
     echo "──────────────────────────────────"
     read -rp "> " c
     case "$c" in
-        1) drive "$PLANS/plan_A_B.csv" ;;
-        2) drive "$PLANS/plan_B_C.csv" ;;
-        s) snapshot ;;
-        r) do_reloc ;;
-        q) break ;;
-        *) echo "?" ;;
+        ''|*[!0-9]*)
+            case "$c" in
+                s) snapshot ;;
+                r) do_reloc ;;
+                q) break ;;
+                *) echo "?" ;;
+            esac ;;
+        *)  f="${PLANFILES[$((c-1))]:-}"
+            if [ -n "$f" ] && [ "$c" -ge 1 ]; then drive "$f"; else echo "?"; fi ;;
     esac
 done

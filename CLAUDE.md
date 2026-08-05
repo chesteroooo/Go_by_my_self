@@ -23,18 +23,36 @@ the car centred on the segmented road and constrain heading so lateral/heading d
 even when the SLAM pose is weak. This builds on the existing floor-segmentation work
 (`ros_detect_dual.py`, `collect_floor_dataset.py`).
 
-## Current Focus — TANet Paper (deadline 2026-08-15)
+## Current Focus — TANET 2026 Paper (submission deadline 2026-08-15)
 
 **Read `paper/PLAN.md` before working on anything paper-related — it is the single source of
-truth for the plan, schedule, and experiment design.** Summary: a lightweight VLM (4-bit GGUF,
-llama.cpp) running on a **QCS6490 board (Ubuntu)** acts as an event-triggered scene-state
-supervisor — it detects the visual-SLAM degradation zones (the open brick corridor above) from
-single frames. Ground truth is derived from recorded rosbag SLAM telemetry via
-`analyze_aurora_bag.py`, not hand labels. The QCS6490 is framed as the **target platform to
-replace the onboard x86 PC** (Aurora computes SLAM on-device; the wheeltec base has its own
-controller). Main results = accuracy × latency × power on QCS6490, vs the onboard PC (no GPU,
-compare perf/watt) and cloud Gemini (the field 5G private network has no internet — cite as
-edge motivation). Monitoring VQA (what blocks the path / alert?) is a qualitative demo only.
+truth for the plan, schedule, and experiment design.** Summary (main line revised 2026-07-29):
+geometric sensors (depth, lidar, the closed-set `best.pt` segmenter) **fail silently** on
+object classes they were never trained on — a cardboard box gets confidently labelled `road`.
+An **event-triggered VLM** acts as a semantic supervision layer that answers what the obstacle
+is, whether the vehicle can pass, and whether it must alert an operator, emitting a
+human-readable text rationale (explainable-AI angle). Output is a **three-level action
+decision**: L0 pass / L1 self-bypass (`ros_test_bypass.py`) / L2 stop and report. Cheap signals
+(segmentation coverage, depth) run continuously and only *trigger* the VLM — the trigger
+argument is **cost, not accuracy**: VLM inference takes hundreds of ms to seconds, the camera
+runs at 30 fps. The VLM executes off-vehicle via a **public-cloud API** — the only offload tier actually
+implemented and measured. The 5G-private-network relay and on-vehicle local inference are
+**design and future work only** and must never be written up as completed experiments.
+
+Main result = a five-rung baseline ladder on **seen vs unseen** obstacle classes: C1 segmentation
+→ C2 depth → C3 depth+height rule → **C4 COCO detector + class→level lookup** → C5 VLM.
+The thesis lives at the **decision layer, not the detection layer** — "only a VLM can see unseen
+objects" is false (open-vocabulary detectors can) and must not be claimed. What no other method
+does is emit a handling level plus an auditable rationale without pre-enumerating the classes,
+and judge object *state* (dry vs wet cement, shallow vs deep water) rather than class. Submitted under **TANET Topic 1 (AI)**, not Topic 3 (networking) — the
+networking side is only latency measurement and would read as thin there. TANET is chosen over
+TAAI because its notification (by 2026-09-15) lands before a 2026-10-14 graduate-application
+deadline.
+
+**Superseded:** the earlier QCS6490 / SLAM-degradation-detection line is dropped — the QCS6490
+is unavailable, and ORB-feature thresholds and map geofencing are cheap baselines that make
+"VLM detects SLAM degradation" hard to defend. Aurora S is **functional** (merely powered off);
+it is not required for the main experiments but is useful for demo-video recording.
 
 ## Environment Setup
 
@@ -155,6 +173,11 @@ Companion tools in `Detect/new_detect/aurora/`: `aurora_status.py` (live status,
 `aurora_map.sh save|load|reloc|reset` (headless map control), `record_aurora.sh` +
 `analyze_aurora_bag.py` (record & analyze SLAM quality). **Only ONE client can hold the
 Aurora at a time** — close the Aurora Remote app before launching the ROS node, and vice versa.
+**`no_preview_image` must stay `true` in the launch** — with the compressed preview stream on
+(the SDK default) the node SIGSEGVs ~1 s after "whole explore map synchronized" on the Jetson
+(SDK 2.1.1-rtm / L4T R35.6.0, reproduced 3/3 on 2026-08-05). The cost is that
+`left_image_raw` / `right_image_raw` / `semantic_segmentation` stop publishing, which disables
+`inspect_semantic_seg.py` and `record_aurora.sh full`; nothing on the autopilot path uses them.
 Publishes 6DOF pose `/slamware_ros_sdk_server_node/robot_pose` plus `point_cloud`/depth/stereo/IMU.
 Runs as an **independent TF tree** (`aurora_map → aurora_odom → aurora_base_link`), so it does not
 collide with the robot's `map → odom → base_link`. For a standalone test without the robot, first
@@ -224,7 +247,7 @@ D435i Color → best.pt road seg → /floor_detected + /floor_info → lane-cent
 | old_detect/ros_move_follow_tag.py | `TARGET_DIST` | 0.5 m | Desired tag-to-robot distance |
 | new_detect/ros_move_pair_task.py | `MAX_SPEED_V` | 0.2 | Cruise forward speed |
 | new_detect/ros_move_pair_task.py | `TAG_LOST_TIMEOUT` | 10.0 s | Seconds with no tag before stopping |
-| new_detect/ros_test_ground_bypass.py | `CAM_TILT_DEG` | 30.0° | Camera down-tilt; wrong value makes the ground read as an obstacle |
+| new_detect/ros_test_ground_bypass.py | `CAM_TILT_DEG` / `CAM_HEIGHT_M` | 13.0° / 0.565 m | Camera down-tilt & optical-centre height; wrong value makes the ground read as an obstacle. Measured 2026-08-04 by `measure_cam.py` — re-measure after any re-mount |
 | new_detect/ros_test_ground_bypass.py | `DODGE_OFFSET` | 0.45 m | Rightward shift when bypassing (keep inside lane) |
 | new_detect/ros_detect_apriltag.py | `TAG_SIZE_M` | 0.11 m | Printed tag side length (must match reality) |
 | new_detect/ros_detect_apriltag.py | `W` / `H` / `FPS` | 1280/720/30 | IR stream resolution & frame rate |

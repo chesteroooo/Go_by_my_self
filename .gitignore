@@ -4,6 +4,15 @@ calib_images/
 floor_dataset/
 *.bag
 
+# 論文資料集（TANET 2026）
+# 影像不進 git：彩色 PNG + 16-bit 深度，一筆約 1.2MB、全套約 240 筆 ~290MB。
+# 原始影像存在 Jetson：~/Go_by_my_self/Detect/new_detect/paper_data/，另外備份雲端。
+# 但 metadata.csv（ground truth 標籤）與 intrinsics.json 很小且不可重製，照常版控。
+Detect/new_detect/paper_data/*/color/
+Detect/new_detect/paper_data/*/depth/
+Detect/new_detect/paper_data/*/depth_vis/
+Detect/new_detect/paper_data/*/seg_vis/
+
 # YOLO 模型
 *.pt
 *.onnx

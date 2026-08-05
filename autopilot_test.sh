@@ -24,21 +24,33 @@ trap 'echo; echo "[autopilot] Ctrl-C -> back to menu"; exit 130' INT TERM   # Ct
 mapfile -t PLANS < <(ls $ND/route/routes_*/plan_*.csv 2>/dev/null)
 [ ${#PLANS[@]} -eq 0 ] && { echo "no route plans found under route/routes_*/"; exit 1; }
 echo "==== choose a ROUTE to test ===="
-for i in "${!PLANS[@]}"; do echo "  $((i+1))) ${PLANS[$i]#$ND/route/}"; done
+for i in "${!PLANS[@]}"; do
+  # first comment line of the plan carries direction + length
+  printf "  %d) %-34s %s\n" "$((i+1))" "${PLANS[$i]#$ND/route/}" \
+         "$(head -1 "${PLANS[$i]}" | sed 's/^# *//; s/ *(x,y,yaw_rad).*//')"
+done
 read -rp "route #: " ri
 PLAN="${PLANS[$((ri-1))]}"
 [ -z "$PLAN" ] && { echo "invalid choice"; exit 1; }
 echo "  -> ${PLAN##*/}"
 
-# ---- 2. choose MAP ----
+# ---- 2. MAP: use the map this route was extracted from ----
+#每張 .stcm 是獨立座標系 —— 路線配錯地圖，車會照別張圖的座標開出去。
+# routes_*/index.yaml 的 source: 記著出處，優先自動配對。
 mapfile -t MAPS < <(ls ~/maps/*.stcm 2>/dev/null)
 if [ ${#MAPS[@]} -eq 0 ]; then
   echo "!! No map found in ~/maps/*.stcm — autopilot needs a saved SLAM map."
   echo "   Copy one over first (ask Claude to rsync your .stcm), then retry."
   exit 1
+fi
+WANT=$(awk '/^source:/{print $2; exit}' "$(dirname "$PLAN")/index.yaml" 2>/dev/null)
+WANT="${WANT##*[\\/]}"          # 有些舊 index.yaml 存的是 Windows 路徑
+if [ -n "$WANT" ] && [ -f ~/maps/"$WANT" ]; then
+  MAP=~/maps/"$WANT"; echo "map: $WANT   (auto-paired — this route was extracted from it)"
 elif [ ${#MAPS[@]} -eq 1 ]; then
   MAP="${MAPS[0]}"; echo "map: ${MAP##*/}"
 else
+  [ -n "$WANT" ] && echo "!! this route came from '$WANT', which is NOT in ~/maps — pick carefully:"
   echo "==== choose a MAP ===="
   for i in "${!MAPS[@]}"; do echo "  $((i+1))) ${MAPS[$i]##*/}"; done
   read -rp "map #: " mi; MAP="${MAPS[$((mi-1))]}"

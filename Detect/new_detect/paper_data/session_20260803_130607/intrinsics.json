@@ -1,0 +1,18 @@
+{
+  "width": 640,
+  "height": 480,
+  "fx": 607.7769775390625,
+  "fy": 607.6535034179688,
+  "ppx": 323.7152099609375,
+  "ppy": 244.8405303955078,
+  "model": "distortion.inverse_brown_conrady",
+  "coeffs": [
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0
+  ],
+  "depth_scale_m_per_unit": 0.0010000000474974513,
+  "note": "depth PNG \u70ba 16-bit \u539f\u59cb\u55ae\u4f4d\uff1b\u516c\u5c3a = \u503c * depth_scale_m_per_unit"
+}

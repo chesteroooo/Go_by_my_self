@@ -24,8 +24,9 @@
          /slamware_ros_sdk_server_node/robot_pose   6DOF visual pose (aurora_map)
          /slamware_ros_sdk_server_node/point_cloud  dense depth cloud
          /slamware_ros_sdk_server_node/depth_image_raw
-         /slamware_ros_sdk_server_node/left_image_raw , right_image_raw
          /slamware_ros_sdk_server_node/imu_raw_data
+       (left_image_raw / right_image_raw / semantic_segmentation are OFF —
+        see the no_preview_image note below.)
        ===================================================================== -->
 
   <arg name="ip_address" default="192.168.11.1" />
@@ -50,7 +51,15 @@
     <param name="imu_raw_data_period"   value="0.005"/>
     <param name="ladar_data_clockwise"  value="true"/>
     <param name="robot_pose_topic"      value="robot_pose"/>
-    <param name="no_preview_image"      value="false"/>
+    <!-- MUST stay true on the Jetson (aarch64). With the compressed preview
+         stream ON (value="false", which is also the SDK default) the node
+         SIGSEGVs ~1 s after "whole explore map synchronized" — reproduced
+         3/3 on SDK 2.1.1-rtm / L4T R35.6.0, 2026-08-05. true => stable,
+         robot_pose 14.7 Hz / point_cloud 10 Hz / odom 10 Hz / imu 212 Hz.
+         Cost: left_image_raw, right_image_raw and semantic_segmentation stop
+         publishing, so inspect_semantic_seg.py and `record_aurora.sh full`
+         won't work. Nothing on the autopilot path uses them. -->
+    <param name="no_preview_image"      value="true"/>
     <!-- raw (uncompressed) image stream off: needs >=300 Mbps if enabled -->
     <param name="raw_image_on"          value="false"/>
   </node>
