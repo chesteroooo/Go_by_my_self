@@ -43,27 +43,34 @@ python3 paper/b1_geometry.py                          # 能跑完就代表深度
 
 | 檔案 | 類別 | 用途 |
 |---|---|---|
-| **`best_field_jetson.pt`** | `{0:grass, 1:road, 2:sidewalk}` | ★ **全篇一律用這顆**。現場拍攝時 Jetson 上跑的就是它，`seg_vis/` 由它產生 |
-| `best_paper.pt` | `{0:road, 1:grass, 2:road, 3:sidewalk}` | 僅保留備查（= 舊的 `best3.pt`）。**不要用於任何分析** |
+| **`best_paper.pt`** | `{0:road, 1:grass, 2:road, 3:sidewalk}` | ★ **全篇一律用這顆**（= `best3.pt`）。`seg_vis/` 已於 2026-08-06 用它全部重新產生 |
+| `best_field_jetson.pt` | `{0:grass, 1:road, 2:sidewalk}` | 現場拍攝時 Jetson 上實際載入的那顆，**僅保留備查** |
 | `yolov8n.pt` | COCO 80 類 | B2 的偵測器（也可讓 ultralytics 自動下載）|
 
-> **為什麼統一用 field 那顆（2026-08-06 定案）：**
-> 1. **資料集裡的 `seg_vis/` 是它產生的** —— 換模型就跟已存的疊圖對不上
-> 2. **它的類別定義才是文件記載的那組**（`0=grass, 1=road, 2=sidewalk`）。
->    `best_paper.pt` 有**兩個都叫 `road` 的類別**（id 0 與 2），是訓練產生的瑕疵，分析時容易漏算
-> 3. 論文只需要描述一個模型
+> ⚠️ **`best_paper.pt` 有兩個都叫 `road` 的類別（id 0 與 2）。**
+> 只抓 id 0 會得到空遮罩 —— 我第一次量走廊寬度就踩到。程式一律這樣寫：
+> ```python
+> road_ids = {k for k, v in model.names.items() if v == "road"}
+> ```
 >
-> **已驗證換模型不影響既有結論** —— 用兩顆分別量走廊寬度：
+> **現場其實跑的是另一顆（文件與現場不符，論文限制要載明）**
+> 拍攝手冊 §0-A 第 2 項寫「`best.pt` 已放好，來源 `best3.pt`（2026-08-01）」，
+> 但那個動作只在 PC 上做了 —— Jetson 上的 `best.pt`(`250b677f`) ≠ `best3.pt`(`21aab7c9`)。
+> **原始的 247 張 `seg_vis/` 是舊模型產生的**，已於 2026-08-06 用 `best_paper.pt` 全部重跑覆蓋。
 >
-> | | 2 m 處 | 3 m 處 |
+> **兩顆在論文主張的那件事上量不出差別**（障礙物區域的 `road` 覆蓋率／信心）：
+>
+> | 影像 | `best_field_jetson` | `best_paper` |
 > |---|---|---|
-> | `best_paper.pt` | 184 cm | 204 cm |
-> | `best_field_jetson.pt` | 183 cm | 202 cm |
+> | 延長線 | road 100% / 0.97 | road 100% / 0.99 |
+> | 紙箱 | road 100% / 0.98 | road 100% / 0.98 |
+> | 碎陶片 | road 100% / 0.98 | road 100% / 0.98 |
+> | 走廊寬度（2 m / 3 m）| 183 / 202 cm | 184 / 204 cm |
 >
-> 差 1–2 cm，`W_CORRIDOR = 1.80 m` 不變。
+> 圖 2 的動機示例（「連路面分割器都自信地把延長線標成 `road`」）**用哪顆都成立**，
+> `W_CORRIDOR = 1.80 m` 也不受影響。
 >
-> ⚠️ 分析時**明確指定路徑**，不要依賴自動尋找 —— `Detect/new_detect/best.pt` 是機器人節點用的
-> 那顆（內容同 `best_paper.pt`），不是這裡要用的。
+> ⚠️ 分析時**明確指定路徑**，不要依賴自動尋找 —— `Detect/new_detect/best.pt` 是機器人節點用的那顆。
 
 ### 1-D Python 環境
 
