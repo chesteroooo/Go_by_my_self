@@ -5,17 +5,16 @@ floor_dataset/
 *.bag
 
 # 論文資料集（TANET 2026）
-# 影像不進 git：彩色 PNG + 16-bit 深度，一筆約 1.2MB、全套約 240 筆 ~290MB。
-# 原始影像存在 Jetson：~/Go_by_my_self/Detect/new_detect/paper_data/，另外備份雲端。
-# 但 metadata.csv（ground truth 標籤）與 intrinsics.json 很小且不可重製，照常版控。
-Detect/new_detect/paper_data/*/color/
-Detect/new_detect/paper_data/*/depth/
-Detect/new_detect/paper_data/*/depth_vis/
-Detect/new_detect/paper_data/*/seg_vis/
+# 2026-08-06 起**影像也進 git**（原本排除）。理由：Jetson 已退役，原始影像不再有
+# 第二個存放點，而論文要在多台電腦上寫完 —— 放進 repo 才能一次 clone 拿到全部。
+# 約 162 MB / 988 個檔，單檔最大 0.5 MB，遠低於 GitHub 單檔 100 MB 上限。
+# ⚠️ 其中 136 張含人像，**此 repo 必須維持 private**。
 
 # YOLO 模型
 *.pt
 *.onnx
+# 但論文分析用的模型要進 git（換機時必須跟著走，且與資料集綁定）
+!Detect/new_detect/models/*.pt
 
 # Python 快取
 **/__pycache__/
@@ -48,7 +47,10 @@ Thumbs.db
 *:Zone.Identifier
 
 # Claude Code 本地設定
-.claude/
+# 註：用 `.claude/*` 而非 `.claude/`，否則 git 不會進到目錄裡，下面的 ! 例外會失效
+.claude/*
+# 但專案記憶要進 git —— 換機後新的 Claude Code 靠它接上脈絡
+!.claude/memory/
 
 # SLAM 地圖（大檔，存 ~/maps/）
 *.stcm
