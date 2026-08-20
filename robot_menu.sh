@@ -73,7 +73,7 @@ import ast, csv, glob, os, re, sys, collections
 
 ND = sys.argv[1] if len(sys.argv) > 1 else os.path.expanduser("~/Go_by_my_self/Detect/new_detect")
 SRC = os.path.join(ND, "segmentation", "capture_paper_dataset.py")
-ROOT = os.path.join(ND, "paper_data")
+ROOT = os.path.normpath(os.path.join(ND, "..", "..", "paper", "paper_data"))
 PER_OBJ, N_EMPTY, N_NEG = 6, 6, 34          # 每物件 3距離x2橫向；空景 6；負樣本 ~34
 
 try:

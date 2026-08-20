@@ -57,8 +57,9 @@ DEPTH_W, DEPTH_H = 640, 480
 FPS = 30
 FRAME_TIMEOUT_MS = 5000
 
-# 輸出根目錄：new_detect/paper_data/
-OUT_ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "paper_data")
+# 輸出根目錄：<repo>/paper/paper_data/（2026-08-20 由 new_detect/ 移進 paper/）
+OUT_ROOT = os.path.normpath(os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "paper", "paper_data"))
 
 # best.pt 位置（--seg 才會載入）
 BEST_PT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "best.pt")

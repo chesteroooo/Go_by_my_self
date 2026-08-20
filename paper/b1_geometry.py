@@ -319,8 +319,7 @@ def sweep(res):
 
 def main():
     ap = argparse.ArgumentParser(description="B1 — 深度 + 幾何規則基線")
-    root = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                        "..", "Detect", "new_detect", "paper_data")
+    root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "paper_data")
     ap.add_argument("--data", default=os.path.normpath(root), help="paper_data 目錄")
     ap.add_argument("--session", default="", help="只跑指定的 session 路徑")
     ap.add_argument("--h-pass", type=float, default=H_PASS, help=f"高度門檻 m (預設 {H_PASS})")

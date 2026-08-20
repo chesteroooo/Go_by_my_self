@@ -24,10 +24,14 @@ cd Go_by_my_self
 這包含：所有分析腳本、`paper/` 全部文件、每個 session 的 `metadata.csv` 與 `intrinsics.json`、
 以及 `.claude/memory/`（跨對話的專案記憶，Claude Code 會讀）。
 
-### 1-B 取得影像（**不在 git 裡，要另外傳**）
+### 1-B 取得影像（**已在 git 裡，clone 就有**）
 
-`.gitignore` 排除了 `color/ depth/ depth_vis/ seg_vis/`（161 MB、988 個檔）。
-用隨身碟或雲端把整個 `Detect/new_detect/paper_data/` 複製過去，放在同樣的相對路徑。
+2026-08-06 起影像也進 git（Jetson 退役後不再有第二個存放點），所以 `git clone` 就會
+一併拿到 `paper/paper_data/`（161 MB、998 個檔 = 247×4 + 10 個 csv/json）。
+**⚠️ 因此這個 repo 必須維持 private。**
+
+> 資料夾位置 2026-08-20 由 `Detect/new_detect/paper_data/` 移到 `paper/paper_data/`
+> —— 論文資料跟論文放在一起。所有讀寫它的程式都已同步改路徑。
 
 > **影像裡有 136 張含人像**（協助者）。傳輸與存放請避免公開位置；
 > 論文用圖若出現人臉需打碼並載明取得同意（見標註規則 §5）。
@@ -35,7 +39,7 @@ cd Go_by_my_self
 驗證有沒有傳完整：
 
 ```bash
-find Detect/new_detect/paper_data -type f | wc -l     # 應為 1005
+find paper/paper_data -type f | wc -l                 # 應為 998
 python3 paper/b1_geometry.py                          # 能跑完就代表深度與內參都在
 ```
 
@@ -136,7 +140,7 @@ EMPTY 18    NEG road 31 / grass 10 / sidewalk 16
 |---|---|---|
 | T3 閉迴路實車示範錄影（觸發 → VLM 回 L1 → 實際繞行）| **做不成** | 主結果不受影響。論文改為「處置等級對應到既有的繞障行為」的**設計說明**，不宣稱做過閉迴路示範 |
 | 補拍任何影像 | **做不成** | 資料集已完成 247 張，不需要補 |
-| `ros_test_bypass.py`（L1 的執行器）| 已從 repo 刪除 | 仍在 git 歷史裡：`git show <刪除前的commit>:Detect/new_detect/ros_test_bypass.py`。**PLAN.md 有 4 處引用它，撰稿時要改寫**（見下） |
+| `ros_test_bypass.py`（L1 的執行器）| 已從 repo 刪除 | 仍在 git 歷史裡：`git show 385f3a2^:Detect/new_detect/ros_test_bypass.py`（刪除於 `385f3a2`）。**PLAN.md 有 4 處引用它，撰稿時要改寫**（見下） |
 
 ### 撰稿時必須改寫的四處
 

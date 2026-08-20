@@ -13,11 +13,11 @@ kappa 會被錨定效應灌水成假的高一致性。所以表單只給 `I001` 
 並在 labels/images/ 下建立同名 symlink 讓標註者看圖。
 
 用法：
-    # 產生 3 份空白表單（自動抓 Detect/new_detect/paper_data/ 下所有 session）
+    # 產生 3 份空白表單（自動抓 paper/paper_data/ 下所有 session）
     python3 paper/make_label_sheets.py
 
     # 指定特定 session（例如只想標某一個地點）
-    python3 paper/make_label_sheets.py --meta Detect/new_detect/paper_data/session_.../metadata.csv
+    python3 paper/make_label_sheets.py --meta paper/paper_data/session_.../metadata.csv
 
     # 各自填完 level 欄之後計分
     python3 paper/make_label_sheets.py --score
@@ -35,7 +35,7 @@ LEVELS = ["L0", "L1", "L2"]
 _HERE = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_OUT = os.path.join(_HERE, "labels")
 # capture_paper_dataset.py 的 OUT_ROOT，每次執行建一個 session_<時間戳> 資料夾
-PAPER_DATA = os.path.join(_HERE, "..", "Detect", "new_detect", "paper_data")
+PAPER_DATA = os.path.join(_HERE, "paper_data")
 KEY_NAME = "_key_DO_NOT_OPEN.csv"
 
 # 標註者只會看到這三欄，其餘一律不外流
