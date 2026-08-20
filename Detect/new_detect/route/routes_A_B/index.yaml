@@ -1,0 +1,14 @@
+source: /home/im27car/maps/A_B.stcm
+passes:
+- file: pass_00.csv
+  n_wp: 281
+  length_m: 164.7
+  start:
+  - -0.5
+  - -0.2
+  end:
+  - 111.9
+  - -9.4
+  kf_range:
+  - 95
+  - 1848

@@ -14,7 +14,8 @@
 #   3. rosbag 錄製（背景，結束時自動關檔＋跑分析）
 #   4. 載入地圖（sync_set_stcm，~75 秒位姿會暫停—正常）
 #   5. ★重定位（上次 0706 測試失敗的根因：load 不會自動重定位！）
-#      沒看到 RelocalizationSucceed 不放行
+#      交給 aurora/reloc_wait.py —— 它先訂閱再送請求，不會漏接只發一次的
+#      RelocalizationSucceed；並先取消殘留請求，讓重試真的有效
 #   6. 行駛選單（出發前自動檢查「在路線上＋朝向正確」才啟動跟線）
 #
 # 結束（選單按 q 或 Ctrl-C）：自動停 rosbag、關 Aurora、跑 analyze_aurora_bag.py
@@ -33,6 +34,9 @@ TS=$(date +%m%d_%H%M)
 LOG="$BAGDIR/logs_$TS"
 ROBOT=wheeltec@10.0.11.2
 NS=/slamware_ros_sdk_server_node
+RELOC_TIMEOUT="${RELOC_TIMEOUT:-180}"          # 重定位等待上限（秒）
+PREFLIGHT_OFF_M="${PREFLIGHT_OFF_M:-3.0}"      # 出發前：離路線多遠以內放行
+PREFLIGHT_YAW_DEG="${PREFLIGHT_YAW_DEG:-120}"  # 出發前：與路線方向差多少以內放行
 
 mkdir -p "$BAGDIR" "$LOG"
 source /opt/ros/noetic/setup.bash
@@ -69,55 +73,31 @@ trap cleanup EXIT
 
 # ---------------------------------------------------------------- 重定位（可重入，選單也會用）
 do_reloc() {
+    # reloc_wait.py 取代原本的 `rostopic echo | grep -m1 Succeed`：那個做法會漏接
+    # 只發一次的 RelocalizationSucceed（SDK 是 edge-triggered），也沒清掉殘留請求
+    # 導致重試變空操作 —— 兩者疊起來就是「起點一直抓不到」的體感。
     say "重定位（沒有這步，位姿就不在地圖座標系！）"
+    local rc
     while true; do
-        : > "$LOG/reloc.txt"
-        # 先開 watcher 再呼叫 service，避免錯過短暫的 Succeed
-        ( timeout 180 rostopic echo $NS/relocalization_status/status \
-              | grep -m1 -E "Succeed|Failed|Canceled" > "$LOG/reloc.txt" ) &
-        local watcher=$!
-        "$AURORA_DIR/aurora_map.sh" reloc || echo "（service 呼叫失敗，等 watcher）"
-        echo "等待重定位結果（最多 180 秒，車放特徵多的地方比較快）…"
-        wait "$watcher" 2>/dev/null
-        local r
-        r=$(tr -d ' "' < "$LOG/reloc.txt")
-        case "$r" in
-            *Succeed*) echo -e "\033[1;32m✓ 重定位成功\033[0m"; return 0 ;;
-            *) echo -e "\033[1;31m✗ 重定位未成功（${r:-逾時}）\033[0m"
-               read -rp "把車移到特徵豐富處再試一次？Enter=重試 / q=放棄: " a
-               [ "$a" = "q" ] && return 1 ;;
+        python3 "$AURORA_DIR/reloc_wait.py" --timeout "$RELOC_TIMEOUT" 2>&1 \
+            | tee "$LOG/reloc.txt"
+        rc=${PIPESTATUS[0]}
+        [ "$rc" -eq 0 ] && { echo -e "\033[1;32m✓ 重定位成功\033[0m"; return 0; }
+        echo -e "\033[1;31m✗ 重定位未成功\033[0m"
+        read -rp "Enter=重試（先把車推到特徵多、有建築物的地方）/ f=強制繼續 / q=放棄: " a
+        case "$a" in
+            f) echo -e "\033[1;33m！強制繼續 —— 位姿很可能不在地圖座標系。"
+               echo -e "  出發前檢查還會再擋一次，看清楚它印出的「對到路線里程」再決定。\033[0m"
+               return 0 ;;
+            q) return 1 ;;
         esac
     done
 }
 
 # ---------------------------------------------------------------- 出發前檢查
-preflight() {   # $1 = plan csv；位姿要在路線 1.5 m 內、朝向差 <90°
-    python3 - "$1" <<'PY'
-import sys, math, numpy as np, rospy
-from geometry_msgs.msg import PoseStamped
-wp = np.loadtxt(sys.argv[1], delimiter=",", comments="#", encoding="utf-8")[:, :2]
-rospy.init_node("preflight", anonymous=True)
-try:
-    m = rospy.wait_for_message("/slamware_ros_sdk_server_node/robot_pose",
-                               PoseStamped, timeout=5)
-except rospy.ROSException:
-    print("✗ 5 秒內收不到位姿"); sys.exit(1)
-x, y = m.pose.position.x, m.pose.position.y
-q = m.pose.orientation
-yaw = math.atan2(2*(q.w*q.z+q.x*q.y), 1-2*(q.y*q.y+q.z*q.z))
-d = np.linalg.norm(wp - (x, y), axis=1)
-i = int(d.argmin()); lat = float(d[i])
-j = min(i+3, len(wp)-1)
-if j == i: i = max(0, i-3)
-pd = math.atan2(wp[j][1]-wp[i][1], wp[j][0]-wp[i][0])
-alpha = math.degrees(math.atan2(math.sin(pd-yaw), math.cos(pd-yaw)))
-print(f"位姿 ({x:+.2f},{y:+.2f})  yaw {math.degrees(yaw):+.0f}°  "
-      f"離路線 {lat:.2f} m  與路線方向差 {alpha:+.0f}°")
-if lat <= 1.5 and abs(alpha) <= 90:
-    print("✓ 出發前檢查通過"); sys.exit(0)
-print("✗ 檢查未通過：車不在路線上、車頭朝錯方向，或重定位其實沒成功（0706 就是這樣）")
-sys.exit(1)
-PY
+preflight() {   # $1 = plan csv；門檻見 PREFLIGHT_OFF_M / PREFLIGHT_YAW_DEG
+    python3 "$ROUTE_DIR/preflight.py" --plan "$1" \
+        --max-off "$PREFLIGHT_OFF_M" --max-yaw "$PREFLIGHT_YAW_DEG"
 }
 
 drive() {       # $1 = plan csv
@@ -186,10 +166,13 @@ BAG_PID=$!
 echo "✓ 錄到 $BAGDIR/test_$TS.bag"
 
 say "3.5/6 即時儀表板（唯讀，會彈出視窗）"
-# 只訂閱不發 /cmd_vel，可與駕駛節點同時跑。底圖來自 Aurora 即時地圖。
-python3 "$ROUTE_DIR/route_monitor.py" --routes "$PLANS" >"$LOG/monitor.log" 2>&1 &
+# 只訂閱不發 /cmd_vel，可與駕駛節點同時跑。
+# --leg：這一段的位姿會被換算到「八段整合地圖」的座標，所以不管跑哪一段，
+# 看到的都是同一張整合地圖，車子畫在正確位置上。
+LEG="$(basename "$PLANS")"; LEG="${LEG#routes_}"
+python3 "$ROUTE_DIR/route_monitor.py" --leg "$LEG" >"$LOG/monitor.log" 2>&1 &
 MON_PID=$!
-echo "✓ 儀表板已啟動（Tk 視窗；無畫面/出錯會自動退回網頁，URL 見 $LOG/monitor.log）"
+echo "✓ 儀表板已啟動（整合地圖，目前路段 $LEG；無畫面/出錯會自動退回網頁，URL 見 $LOG/monitor.log）"
 
 say "4/6 載入地圖"
 read -rp "車放 A 點、車頭朝路線方向後按 Enter 載圖（這次開機已載過就輸入 s 跳過）: " ans

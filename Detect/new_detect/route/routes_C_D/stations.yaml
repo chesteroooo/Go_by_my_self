@@ -1,0 +1,5 @@
+# 由 extract_oneway.py 產生：單程路徑的兩端
+snap_radius: 3.0
+stations:
+  C: {x: -0.4, y: -0.4}
+  D: {x: -96.0, y: 80.7}

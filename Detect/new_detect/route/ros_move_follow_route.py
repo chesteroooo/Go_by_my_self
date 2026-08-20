@@ -10,7 +10,10 @@ ros_move_follow_route.py — 沿規劃路線行駛（pure pursuit）
 安全機制：
   - 空白鍵 = 緊急停止/解除，q = 停車結束（比照 ros_move_pair_task.py）
   - 位姿逾時 POSE_TIMEOUT 沒更新 → 停車（SLAM 斷線/追蹤丟失）
-  - 橫向誤差 > MAX_LATERAL → 停車（位姿跳層/重定位錯誤的保險）
+  - 橫向誤差 > MAX_LATERAL 且「連續」超過 LATERAL_HOLD_S → 停車
+    （位姿跳層/重定位錯誤的保險；單一位姿突波只減速不退出）
+  - 橫向偏離 > RESNAP_M 持續 RESNAP_HOLD_S → 重新對線
+    （進度視窗只往前找，位姿在重定位收斂時一跳，不重新對線就永遠卡在錯的路段）
 
 出發前檢查（重要）：
   車頭必須朝路線行進方向、且已重定位成功（aurora_status.py 看狀態）。
@@ -35,8 +38,13 @@ MAX_SPEED_V = 0.6        # 巡航速度 (m/s) = 60 cm/s（原 0.2；現場測試
 MAX_TURN_W = 0.6         # 角速度上限 (rad/s)
 LOOKAHEAD = 0.8          # pure pursuit 前視距離 (m)
 GOAL_TOL = 0.3           # 到達判定 (m)
-MAX_LATERAL = 1.5        # 橫向誤差超過即停車 (m)（位姿跳層保險）
-POSE_TIMEOUT = 1.0       # 位姿逾時 (s)
+MAX_LATERAL = 3.0        # 橫向誤差超過即停車 (m)（位姿跳層保險）。原 1.5 太嚴：
+                         #   重定位收斂當下的位姿修正本來就常有 2 m 上下
+LATERAL_HOLD_S = 1.0     # 橫向要「連續」超限這麼久才停車（單一位姿突波不算）
+RESNAP_M = 2.0           # 橫向偏離超過此值且持續 RESNAP_HOLD_S → 重做全域最近點
+RESNAP_HOLD_S = 1.0
+START_GRACE_S = 3.0      # 收到第一個位姿後這幾秒內不因橫向超限退出（等重定位安定）
+POSE_TIMEOUT = 1.5       # 位姿逾時 (s)
 RATE_HZ = 20
 
 
@@ -55,11 +63,16 @@ class PurePursuit:
         self.wp, self.cum = wp, cum
         self.i_near = 0
         self.inited = False
+        self.n_far = 0                # 連續偏離次數，達 RESNAP_HOLD_S 就重新對線
+
+    def _snap(self, x, y):
+        """全路徑找最近點。起步、以及位姿跳掉之後重新對上路線都用它。"""
+        return int(np.argmin(np.linalg.norm(self.wp - (x, y), axis=1)))
 
     def step(self, x, y, yaw):
         # 第一次呼叫：全路徑找最近點（支援從中途重啟）
         if not self.inited:
-            self.i_near = int(np.argmin(np.linalg.norm(self.wp - (x, y), axis=1)))
+            self.i_near = self._snap(x, y)
             self.inited = True
         # 之後只在進度視窗內往前找（防止 U 形路徑吸到對向）
         lo = self.i_near
@@ -68,9 +81,23 @@ class PurePursuit:
         self.i_near = lo + int(np.argmin(d))
         lateral = float(d[self.i_near - lo])
 
+        # 進度視窗只往前，所以第一個位姿若是在重定位收斂「之前」收到的，i_near 會
+        # 鎖死在錯的索引上再也回不來 —— 這就是起步「抓不到起點」最主要的機制。
+        # 持續偏離就重做一次全域最近點；若位姿是真的離線（重定位失敗），重對之後
+        # lateral 仍會超過 MAX_LATERAL，安全把關不受影響。
+        resnap = False
+        if lateral > RESNAP_M:
+            self.n_far += 1
+            if self.n_far >= max(int(RESNAP_HOLD_S * RATE_HZ), 1):
+                self.i_near = self._snap(x, y)
+                lateral = float(np.linalg.norm(self.wp[self.i_near] - (x, y)))
+                self.n_far, resnap = 0, True
+        else:
+            self.n_far = 0
+
         remain = self.cum[-1] - self.cum[self.i_near]
         if remain < GOAL_TOL and np.linalg.norm(self.wp[-1] - (x, y)) < GOAL_TOL:
-            return 0.0, 0.0, dict(done=True, lateral=lateral, remain=0.0)
+            return 0.0, 0.0, dict(done=True, lateral=lateral, remain=0.0, resnap=resnap)
 
         # 前視點：沿線再走 LOOKAHEAD 公尺的 waypoint
         target_s = self.cum[self.i_near] + LOOKAHEAD
@@ -85,7 +112,8 @@ class PurePursuit:
         v = MAX_SPEED_V * max(0.15, 1.0 - abs(alpha) / math.radians(90))  # 大角度先转慢走
         if remain < 1.0:
             v *= max(remain, 0.25)                        # 接近終點減速
-        return v, w, dict(done=False, lateral=lateral, remain=remain, alpha=alpha)
+        return v, w, dict(done=False, lateral=lateral, remain=remain, alpha=alpha,
+                          resnap=resnap)
 
 
 # ------------------------------------------------------------ 離線模擬
@@ -195,6 +223,8 @@ def run_ros(wp, cum, pose_topic):
     pp = PurePursuit(wp, cum)
     rate = rospy.Rate(RATE_HZ)
     estop = False
+    t_first = None                                     # 第一個有效位姿的時間
+    n_bad = 0                                          # 連續橫向超限次數
     print("等待位姿…（空白鍵=緊急停止/解除, q=結束）")
     with Keyboard() as kb:
         while not rospy.is_shutdown():
@@ -211,15 +241,31 @@ def run_ros(wp, cum, pose_topic):
                 cmd_pub.publish(tw)                    # 停車
                 rate.sleep()
                 continue
+            if t_first is None:
+                t_first = time.time()
 
             v, w, info = pp.step(*state["pose"])
             if info["done"]:
                 print("\n到達終點，停車。")
                 break
+            if info["resnap"]:
+                print(f"\n[重新對線] 位姿偏離 {info['lateral']:.1f} m，"
+                      f"改對到里程 {pp.cum[pp.i_near]:.0f} m 處")
             if info["lateral"] > MAX_LATERAL:
-                print(f"\n!! 橫向誤差 {info['lateral']:.1f} m 超限 —— 停車"
+                n_bad += 1
+                # 起步 grace 內、或還沒連續超限夠久 → 只停車不退出，給位姿收斂的機會。
+                # 以前是一超限就 break 整支節點結束，起步位姿還沒收斂就得重開。
+                if (time.time() - t_first < START_GRACE_S
+                        or n_bad < max(int(LATERAL_HOLD_S * RATE_HZ), 1)):
+                    cmd_pub.publish(tw)                # 停著等，不退出
+                    print(f"\r等位姿對上路線… 橫向 {info['lateral']:6.1f} m   ", end="")
+                    rate.sleep()
+                    continue
+                print(f"\n!! 橫向誤差 {info['lateral']:.1f} m 連續超過 "
+                      f"{LATERAL_HOLD_S:.0f} s —— 停車"
                       f"（可能位姿跳到另一方向圖層，重新確認重定位）")
                 break
+            n_bad = 0
             tw.linear.x, tw.angular.z = v, w
             cmd_pub.publish(tw)
             print(f"\r剩餘 {info['remain']:6.1f} m  橫向 {info['lateral']:4.2f} m  "

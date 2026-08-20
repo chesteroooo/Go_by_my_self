@@ -14,10 +14,18 @@ ros_detect_dual、遙控面板）同時跑，零衝突。
 自動用地圖原點/解析度定位，換任何 .stcm 都不用改設定。路線 CSV（--routes）是
 可選的疊圖；沒有也能只看底圖＋車。
 
+★ 整合地圖模式（--leg）：A/B/C/D 每一段是各自獨立的座標系，載入哪一段的 .stcm，
+位姿就在那一段的座標系裡。加上 --leg 之後，本程式用 routes_site/transforms.yaml
+把即時位姿換算到整合座標，於是**不管在跑哪一段，看到的都是同一張八段整合地圖**，
+車子畫在正確的位置上。位姿和該段路線套用同一個剛體變換，距離不變，所以「離路線
+多遠 / 在不在線上」的判定不受配準誤差影響。
+（整合座標下 Aurora 的即時 OccupancyGrid 底圖會歪掉，所以 --leg 模式不畫底圖，
+ 底圖改用八段路線骨架本身。）
+
 介面兩種（比照 ros_teleop_panel.py）：
-  python3 route_monitor.py                 # 預設彈出視窗（Tkinter）
-  python3 route_monitor.py --web           # 改開瀏覽器 http://<本機IP>:8770（手機/平板遠端看）
-  python3 route_monitor.py --plan plan_A_M1.csv   # 預先高亮這條計畫路線
+  python3 route_monitor.py --leg A_B       # ★整合地圖 + 目前跑 A_B（彈出視窗）
+  python3 route_monitor.py --leg A_B --web # 改開瀏覽器 http://<本機IP>:8770
+  python3 route_monitor.py                 # 只看八段整合地圖（不換算位姿）
   python3 route_monitor.py --demo          # 不連 ROS，用假資料預覽 UI
 無畫面（SSH）時彈不出視窗會自動退回 --web。
 
@@ -95,6 +103,32 @@ def load_routes(route_dir):
     else:
         bbox = None      # 沒有路線檔 → 交給地圖底圖定範圍
     return {"passes": passes, "stations": stations, "bbox": bbox}
+
+
+def load_site_transform(site_dir, leg):
+    """讀 transforms.yaml，回傳把 <leg> 段座標換算成整合座標的函式 (x,y,yaw)->(x,y,yaw)。
+
+    找不到就回 None（呼叫端會退回「不換算」，也就是原本的單段行為）。
+    """
+    f = Path(site_dir) / "transforms.yaml"
+    if not (yaml and f.exists()):
+        return None, f"找不到 {f}"
+    try:
+        doc = yaml.safe_load(f.read_text(encoding="utf-8")) or {}
+        e = (doc.get("legs") or {}).get(leg)
+        if not e:
+            return None, f"{f} 裡沒有 {leg} 這一段"
+        th = math.radians(float(e["rot_deg"]))
+        tx, ty = float(e["tx"]), float(e["ty"])
+        c, sn = math.cos(th), math.sin(th)
+
+        def xf(x, y, yaw):
+            return (c * x - sn * y + tx, sn * x + c * y + ty, yaw + th)
+
+        return xf, (f"{leg} → 整合座標：轉 {e['rot_deg']:+.2f}°、移 ({tx:+.1f},{ty:+.1f})"
+                    f"（配準殘差中位 {e.get('fit_median_m', '?')} m）")
+    except Exception as ex:                              # noqa: BLE001
+        return None, f"讀 {f} 失敗：{ex}"
 
 
 def load_plan_xy(route_dir, plan_name):
@@ -310,6 +344,39 @@ def run_web(sh, routes, is_shutdown, port):
 
 
 # ------------------------------------------------------------ Tkinter 彈出視窗（預設）
+def pick_cjk_font(root):
+    """挑一個「這台機器真的有、而且有中文字」的字型家族。
+
+    原本整個 Tk 介面把字型寫死成 ("Arial", ...)：Arial 沒有中文字，Linux 上
+    fontconfig 會換成純拉丁字型，於是所有中文都變成方框。Tk 不像瀏覽器會自動
+    fallback 到別的字型，所以得自己挑。
+    """
+    try:
+        import tkinter.font as tkfont
+        fams = set(tkfont.families(root))
+    except Exception:                                    # noqa: BLE001
+        return "TkDefaultFont"
+    for f in ("Noto Sans CJK TC", "Noto Sans CJK SC", "Noto Sans CJK JP",
+              "Microsoft JhengHei", "PingFang TC", "Heiti TC",
+              "WenQuanYi Zen Hei", "WenQuanYi Micro Hei", "Noto Sans TC"):
+        if f in fams:
+            return f
+    # 走到這裡代表系統一個中文字型都沒有 —— 這時候「挑字型」救不了，
+    # 得先讓系統有字型。實測：沒字型時每個中文字寬 11px（方框），有字型是 19px。
+    print("（注意：這台機器找不到中文字型，介面的中文會顯示成方框）")
+    try:
+        is_wsl = "microsoft" in Path("/proc/version").read_text().lower()
+    except Exception:                                    # noqa: BLE001
+        is_wsl = False
+    if is_wsl and Path("/mnt/c/Windows/Fonts/msjh.ttc").exists():
+        print("  WSL 可以直接借用 Windows 的微軟正黑體，不需要 sudo、不需要網路：")
+        print("    mkdir -p ~/.local/share/fonts && \\")
+        print("    ln -sf /mnt/c/Windows/Fonts/msjh.ttc ~/.local/share/fonts/ && fc-cache -f")
+    else:
+        print("  Ubuntu/Debian：sudo apt install fonts-noto-cjk")
+    return "TkDefaultFont"
+
+
 def run_gui(sh, routes, is_shutdown):
     import tkinter as tk
 
@@ -317,6 +384,7 @@ def run_gui(sh, routes, is_shutdown):
     GOOD, WARN, BAD, ACC, GREY = "#34d399", "#fbbf24", "#f87171", "#4a7fd6", "#39414d"
     root = tk.Tk()
     root.title("Route Monitor")          # 不用 emoji：某些 X11/Tk 對彩色字形會 BadLength 當掉
+    FONT = pick_cjk_font(root)
     root.configure(bg=BG)
     root.geometry("1180x680")
 
@@ -329,19 +397,19 @@ def run_gui(sh, routes, is_shutdown):
     side.pack_propagate(False)
 
     def hdr(t):
-        tk.Label(side, text=t, bg=PANEL, fg=SUB, font=("Arial", 10)).pack(anchor="w", padx=14, pady=(10, 0))
+        tk.Label(side, text=t, bg=PANEL, fg=SUB, font=(FONT, 10)).pack(anchor="w", padx=14, pady=(10, 0))
 
     tk.Label(side, text="Route Monitor", bg=PANEL, fg=INK,
-             font=("Arial", 14, "bold")).pack(anchor="w", padx=14, pady=(14, 0))
+             font=(FONT, 14, "bold")).pack(anchor="w", padx=14, pady=(14, 0))
     tk.Label(side, text="現場測試即時狀態（唯讀）", bg=PANEL, fg=SUB,
-             font=("Arial", 9)).pack(anchor="w", padx=14)
+             font=(FONT, 9)).pack(anchor="w", padx=14)
 
     badges = {}
     for key, lab in (("slam", "SLAM 狀態"), ("route", "在路線上？"), ("move", "行進")):
         f = tk.Frame(side, bg="#11151b", highlightbackground=LINE, highlightthickness=1)
         f.pack(fill="x", padx=12, pady=5)
-        tk.Label(f, text=lab, bg="#11151b", fg=SUB, font=("Arial", 10)).pack(side="left", padx=10, pady=8)
-        v = tk.Label(f, text="—", bg="#11151b", fg=SUB, font=("Arial", 14, "bold"))
+        tk.Label(f, text=lab, bg="#11151b", fg=SUB, font=(FONT, 10)).pack(side="left", padx=10, pady=8)
+        v = tk.Label(f, text="—", bg="#11151b", fg=SUB, font=(FONT, 14, "bold"))
         v.pack(side="right", padx=10)
         badges[key] = v
 
@@ -354,8 +422,8 @@ def run_gui(sh, routes, is_shutdown):
         c = tk.Frame(grid, bg="#11151b", highlightbackground=LINE, highlightthickness=1)
         c.grid(row=i // 2, column=i % 2, sticky="ew", padx=3, pady=3)
         grid.grid_columnconfigure(i % 2, weight=1)
-        tk.Label(c, text=lab, bg="#11151b", fg=SUB, font=("Arial", 8)).pack(anchor="w", padx=8, pady=(5, 0))
-        v = tk.Label(c, text="—", bg="#11151b", fg=INK, font=("Arial", 12, "bold"))
+        tk.Label(c, text=lab, bg="#11151b", fg=SUB, font=(FONT, 8)).pack(anchor="w", padx=8, pady=(5, 0))
+        v = tk.Label(c, text="—", bg="#11151b", fg=INK, font=(FONT, 12, "bold"))
         v.pack(anchor="w", padx=8, pady=(0, 6))
         cells[key] = v
 
@@ -369,7 +437,7 @@ def run_gui(sh, routes, is_shutdown):
     b_fol.pack(side="left", expand=True, fill="x", padx=2)
 
     tk.Label(side, text="綠=正常 · 黃=注意 · 紅=異常／偏離\n只訂閱、不發 /cmd_vel，可與駕駛節點同時跑",
-             bg=PANEL, fg=SUB, font=("Arial", 8), justify="left").pack(anchor="w", padx=14, pady=10)
+             bg=PANEL, fg=SUB, font=(FONT, 8), justify="left").pack(anchor="w", padx=14, pady=10)
 
     def world_box():
         b = list(routes["bbox"]) if routes["bbox"] else None
@@ -423,7 +491,7 @@ def run_gui(sh, routes, is_shutdown):
         for name, c in routes["stations"].items():
             X, Y = sx(c[0]), sy(c[1])
             cv.create_oval(X - 5, Y - 5, X + 5, Y + 5, fill=WARN, outline=BG)
-            cv.create_text(X + 12, Y, text=name, fill=INK, font=("Arial", 11, "bold"), anchor="w")
+            cv.create_text(X + 12, Y, text=name, fill=INK, font=(FONT, 11, "bold"), anchor="w")
         if pose:
             col = GOOD if (st["pose_fresh"] and st["on_route"]) else BAD
             X, Y, ya = sx(pose["x"]), sy(pose["y"]), pose["yaw"]
@@ -481,7 +549,7 @@ def run_gui(sh, routes, is_shutdown):
 
 
 # ------------------------------------------------------------ ROS
-def run_ros(sh, plan_pre):
+def run_ros(sh, plan_pre, xf=None):
     import rospy
     from geometry_msgs.msg import PoseStamped, Twist, Pose
     from nav_msgs.msg import Path as PathMsg, OccupancyGrid
@@ -490,17 +558,23 @@ def run_ros(sh, plan_pre):
     rospy.init_node("route_monitor", anonymous=True, disable_signals=True)
 
     def pose_cb(m):
+        x, y = m.pose.position.x, m.pose.position.y
+        yaw = yaw_from_quat(m.pose.orientation)
+        if xf:                                   # 該段座標 → 整合座標
+            x, y, yaw = xf(x, y, yaw)
         with sh.lock:
-            yaw = yaw_from_quat(m.pose.orientation)
-            sh.pose = (m.pose.position.x, m.pose.position.y, yaw, time.time())
-            sh.trail.append([m.pose.position.x, m.pose.position.y])
+            sh.pose = (x, y, yaw, time.time())
+            sh.trail.append([x, y])
 
     def cmd_cb(m):
         with sh.lock:
             sh.cmd = (m.linear.x, m.angular.z, time.time())
 
     def plan_cb(m):
+        # follow_route 發的 /route_plan 也在該段座標系，一樣要換算
         pts = [[p.pose.position.x, p.pose.position.y] for p in m.poses]
+        if xf:
+            pts = [list(xf(x, y, 0.0)[:2]) for x, y in pts]
         if len(pts) >= 2:
             sh.set_plan(pts, "route_plan")
 
@@ -522,7 +596,10 @@ def run_ros(sh, plan_pre):
     rospy.Subscriber(PLAN_TOPIC, PathMsg, plan_cb, queue_size=1)
     rospy.Subscriber(FLOOR_TOPIC, Pose, floor_cb, queue_size=1)
     rospy.Subscriber(FLOOR_DET_TOPIC, Bool, lambda m: None, queue_size=1)
-    rospy.Subscriber(MAP_TOPIC, OccupancyGrid, map_cb, queue_size=1)
+    if xf is None:
+        # 整合座標模式下這張 OccupancyGrid 是「該段」的地圖、而且是軸對齊的點陣，
+        # 轉過去會歪，所以不訂閱；底圖改用八段路線骨架。
+        rospy.Subscriber(MAP_TOPIC, OccupancyGrid, map_cb, queue_size=1)
 
     try:
         from slamware_ros_sdk.msg import SystemStatus, RelocalizationStatus
@@ -699,7 +776,7 @@ function draw(){requestAnimationFrame(draw);if(!MAP){return;}
     st.plan.forEach((p,i)=>{const X=T.sx(p[0]),Y=T.sy(p[1]);i?ctx.lineTo(X,Y):ctx.moveTo(X,Y);});ctx.stroke();}
   if(st&&st.trail&&st.trail.length>1){ctx.lineWidth=2*dp;ctx.strokeStyle='rgba(52,211,153,.55)';ctx.beginPath();
     st.trail.forEach((p,i)=>{const X=T.sx(p[0]),Y=T.sy(p[1]);i?ctx.lineTo(X,Y):ctx.moveTo(X,Y);});ctx.stroke();}
-  ctx.font=(12*dp)+'px system-ui';ctx.textBaseline='middle';
+  ctx.font=(12*dp)+'px system-ui,"Noto Sans CJK TC",sans-serif';ctx.textBaseline='middle';
   for(const [name,c] of Object.entries(MAP.stations)){const X=T.sx(c[0]),Y=T.sy(c[1]);
     ctx.fillStyle='#fbbf24';ctx.beginPath();ctx.arc(X,Y,5*dp,0,7);ctx.fill();
     ctx.fillStyle='#e8eaed';ctx.fillText(name,X+9*dp,Y);}
@@ -745,16 +822,33 @@ draw();
 # ------------------------------------------------------------ main
 def main():
     ap = argparse.ArgumentParser(description="現場測試即時儀表板（唯讀）")
-    ap.add_argument("--routes", default="routes_compus1_2",
-                    help="路線資料夾（含 pass_*.csv 與 stations.yaml）；可省略，底圖來自 ROS")
-    ap.add_argument("--plan", default=None, help="預先高亮的 plan CSV（例：plan_A_M1.csv）")
+    ap.add_argument("--routes", default="routes_site",
+                    help="路線資料夾（含 pass_*.csv 與 stations.yaml）；預設為八段整合地圖")
+    ap.add_argument("--leg", default=None, metavar="LEG",
+                    help="★車目前跑的路段（例 A_B）：把即時位姿從該段座標換算到整合座標")
+    ap.add_argument("--site", default="routes_site",
+                    help="整合地圖資料夾（含 transforms.yaml），--leg 用它換算")
+    ap.add_argument("--plan", default=None, help="預先高亮的 plan CSV（例：plan_A_B.csv）")
     ap.add_argument("--port", type=int, default=PORT)
     ap.add_argument("--web", action="store_true", help="改用瀏覽器面板（手機/平板遠端看）")
     ap.add_argument("--demo", action="store_true", help="不連 ROS，用假資料預覽 UI")
     args = ap.parse_args()
 
     here = Path(__file__).resolve().parent
-    route_dir = (here / args.routes) if not Path(args.routes).is_absolute() else Path(args.routes)
+    def resolve(p):
+        return Path(p) if Path(p).is_absolute() else (here / p)
+
+    site_dir = resolve(args.site)
+    xf, xf_note = None, None
+    route_dir = resolve(args.routes)
+    if args.leg:
+        xf, xf_note = load_site_transform(site_dir, args.leg)
+        print(f"整合地圖：{xf_note}")
+        if xf is None:
+            print("  → 換算不了，改用單段模式（位姿照原座標畫）"
+                  "；先跑 merge_site_map.py 產生 routes_site/")
+        else:
+            route_dir = site_dir            # 顯示整合地圖
     routes = load_routes(route_dir)
     bb = routes["bbox"]
     print(f"載入 {len(routes['passes'])} 條 pass、{len(routes['stations'])} 個站點；" +
@@ -765,6 +859,12 @@ def main():
     if args.plan:
         plan_pre = load_plan_xy(route_dir, args.plan)
         print(f"預載計畫路線 {args.plan}：{'找不到' if plan_pre is None else str(len(plan_pre)) + ' 點'}")
+    elif args.leg and xf is not None:
+        # 整合地圖模式：直接把該段（已在整合座標的）折線當作計畫路線，
+        # 這樣進度/橫向誤差是對「正在跑的那一段」算的，且距離完全精確。
+        plan_pre = load_plan_xy(site_dir, f"leg_{args.leg}.csv")
+        if plan_pre is not None:
+            print(f"高亮目前路段 {args.leg}：{len(plan_pre)} 點")
 
     sh = Shared()
     if args.demo:
@@ -773,7 +873,7 @@ def main():
         print("=== DEMO 模式（未連 ROS，假資料）===")
     else:
         try:
-            rospy = run_ros(sh, plan_pre)
+            rospy = run_ros(sh, plan_pre, xf)
             is_shutdown = rospy.is_shutdown
         except Exception as e:
             print(f"連 ROS 失敗（{e}）。改用 --demo 可離線預覽 UI。")

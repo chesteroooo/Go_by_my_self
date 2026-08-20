@@ -1,4 +1,4 @@
-source: /tmp/claude-1000/-home-im27car-my-bot-Go-by-my-self-main/bdc38cc2-20fd-4322-b88c-a6c75cf81f4c/scratchpad/A_D_kf.csv
+source: /home/im27car/maps/A_D.stcm
 passes:
 - file: pass_00.csv
   n_wp: 752

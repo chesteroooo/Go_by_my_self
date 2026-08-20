@@ -1,0 +1,64 @@
+backbone: A_D
+note: 把該段地圖座標的位姿換算成整合座標：先繞原點轉 rot_deg，再加 (tx, ty)。
+stations:
+  A:
+  - -0.46
+  - -0.34
+  B:
+  - 109.83
+  - -0.98
+  C:
+  - 226.62
+  - 44.44
+  D:
+  - 329.05
+  - 112.77
+legs:
+  A_D:
+    rot_deg: 0.0
+    tx: 0.0
+    ty: 0.0
+    fit_median_m: 0.0
+    fit_p90_m: 0.0
+  A_B:
+    rot_deg: 3.8173
+    tx: -0.913
+    ty: -0.3332
+    fit_median_m: 0.34
+    fit_p90_m: 1.64
+  B_C:
+    rot_deg: -144.6331
+    tx: 112.9134
+    ty: -3.2192
+    fit_median_m: 0.82
+    fit_p90_m: 1.22
+  C_D:
+    rot_deg: -105.2438
+    tx: 226.5878
+    ty: 40.2126
+    fit_median_m: 1.2
+    fit_p90_m: 3.67
+  D_A:
+    rot_deg: -11.5364
+    tx: 328.6303
+    ty: 111.8319
+    fit_median_m: 0.82
+    fit_p90_m: 1.63
+  D_C:
+    rot_deg: -1.5713
+    tx: 330.7393
+    ty: 112.0054
+    fit_median_m: 1.07
+    fit_p90_m: 3.85
+  C_B:
+    rot_deg: -114.0599
+    tx: 226.4489
+    ty: 40.0809
+    fit_median_m: 1.02
+    fit_p90_m: 1.38
+  B_A:
+    rot_deg: -142.4863
+    tx: 112.802
+    ty: -2.8692
+    fit_median_m: 0.52
+    fit_p90_m: 1.4
