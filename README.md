@@ -118,8 +118,6 @@ Go_by_my_self/
 │       ├── ros_detect_dual.py         #   IR(AprilTag) + Color(YOLO 地板) 雙串流
 │       ├── ros_move_pair_task.py      #   去程+回程任務控制器（狀態機，內含 RouteMap）
 │       ├── ros_move_turn_right.py     #   右轉任務控制器
-│       ├── ros_test_bypass.py         #   障礙繞行測試（自帶相機）
-│       ├── ros_test_ground_bypass.py  #   地面 tag 門 + /odom 路徑記憶 + 繞障回線（自帶相機）
 │       ├── collect_floor_dataset.py   #   YOLO 地板訓練資料收集
 │       └── route_map.yaml             #   路線地圖設定
 │
@@ -276,8 +274,7 @@ old_detect 使用 `old_detect/calib_result.yaml` 校正檔（需先跑校正，�
 | `new_detect/ros_detect_apriltag.py` | `quad_decimate` | `1` | 偵測縮圖倍率：`1`=最遠最慢，`1.5`=較快較近 |
 | `new_detect/ros_move_pair_task.py` | `MAX_SPEED_V` | `0.2` | 巡航前進線速度 |
 | `new_detect/ros_move_pair_task.py` | `TAG_LOST_TIMEOUT` | `10.0` | 連續看不到標籤幾秒後停車 |
-| `new_detect/ros_test_ground_bypass.py` | `CAM_TILT_DEG` | `30.0` | 鏡頭下傾角，設錯會把地面當障礙 |
-| `new_detect/ros_test_ground_bypass.py` | `DODGE_OFFSET` | `0.45` | 繞障時右偏距離（勿超出車道）|
+| `new_detect/measure_cam.py` | 鏡頭下傾角／光心高度 | `13.0°` / `0.565 m` | 2026-08-04 實測值，任何地面平面計算都要用它。重新安裝鏡頭後要重量 |
 | `old_detect/ros_move_follow_tag.py` | `TARGET_DIST` | `0.5` | 跟隨模式想保持的距離（公尺）|
 
 > **拉遠偵測距離**：標籤越大越好（15–20cm 可到 3–4m）；把鏡頭往下傾 10–15°；
@@ -358,7 +355,7 @@ python3 calibration/calibrate_from_images.py        # 自動輸出 Detect/old_de
 
 | 症狀 | 可能原因與解法 |
 |---|---|
-| 啟動相機程式出現 `Device or resource busy` / 資源被佔用 | D435i 一次只能被一個程式開啟。`ros_detect_*.py`、`ros_test_*.py`、`collect_floor_dataset.py`、`realsense-viewer` 都會佔用相機 — 先關掉其他相機程式再執行（`ros_test_*.py` 自帶相機+控制，要「取代」而非「搭配」偵測節點跑）|
+| 啟動相機程式出現 `Device or resource busy` / 資源被佔用 | D435i 一次只能被一個程式開啟。`ros_detect_*.py`、`collect_floor_dataset.py`、`capture_paper_dataset.py`、`realsense-viewer` 都會佔用相機 — 先關掉其他相機程式再執行|
 | `rostopic list` 顯示 `Unable to communicate with master` | 車子沒開機 / 沒跑 roslaunch；或 `ROS_MASTER_URI`、`ROS_IP` 設錯。先 `ping 10.0.11.2` |
 | 偵測視窗打不開 / 抓不到相機 | `realsense-viewer` 確認相機正常；USB 要插 3.0 孔；重插 |
 | 距離數值明顯不對 | `TAG_SIZE_M` 沒設成標籤實際邊長 |

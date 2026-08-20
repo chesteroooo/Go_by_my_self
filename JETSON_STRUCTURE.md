@@ -1,7 +1,7 @@
 # Jetson Orin Nano — On-Device Structure & Deployment Plan
 
-Companion to [JETSON_MIGRATION.md](JETSON_MIGRATION.md) (that doc = the phased *how-to*;
-this doc = the *live inventory*, the **protected-file map**, the **isolation boundary**, and the
+Companion to `JETSON_MIGRATION.md` (**deleted 2026-08-20** — the Jetson is retired; recover the
+phased *how-to* from git history if ever needed). This doc = the *live inventory*, the **protected-file map**, the **isolation boundary**, and the
 **"never delete without permission" safety protocol**).
 
 > **Assessed live on 2026-07-27** over the 5G uplink (`ssh wheeltec@10.0.11.2`, ping ~1.1 s).

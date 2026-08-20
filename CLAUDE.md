@@ -32,7 +32,9 @@ object classes they were never trained on — a cardboard box gets confidently l
 An **event-triggered VLM** acts as a semantic supervision layer that answers what the obstacle
 is, whether the vehicle can pass, and whether it must alert an operator, emitting a
 human-readable text rationale (explainable-AI angle). Output is a **three-level action
-decision**: L0 pass / L1 self-bypass (`ros_test_bypass.py`) / L2 stop and report. Cheap signals
+decision**: L0 pass / L1 self-bypass / L2 stop and report. (The L1 executor
+`ros_test_bypass.py` was removed from the repo in commit `385f3a2`; recover it with
+`git show 385f3a2^:Detect/new_detect/ros_test_bypass.py` if the closed-loop demo needs it.) Cheap signals
 (segmentation coverage, depth) run continuously and only *trigger* the VLM — the trigger
 argument is **cost, not accuracy**: VLM inference takes hundreds of ms to seconds, the camera
 runs at 30 fps. The VLM executes off-vehicle via a **public-cloud API** — the only offload tier actually
@@ -89,8 +91,6 @@ Go_by_my_self/
 │       ├── ros_detect_dual.py          # IR(AprilTag)+Color(best.pt 路面分割) 雙串流＋車道置中
 │       ├── ros_move_pair_task.py       # 去程+回程任務控制器 (鍵盤 e-stop，內含 RouteMap)
 │       ├── ros_move_turn_right.py      # 右轉任務：0_2 正上方停車→右轉90°→停在 0_4 前
-│       ├── ros_test_bypass.py          # 障礙繞行測試 (靜止障礙 S 形右繞，深度+光達雙重把關)
-│       ├── ros_test_ground_bypass.py   # 地面 tag 門 + /odom 路徑記憶 + 閉迴路繞障回線
 │       ├── ros_teleop_panel.py         # 遙控面板 → /cmd_vel (預設彈出視窗；--web 瀏覽器 :8765)
 │       ├── route_map.yaml              # 路線地圖設定
 │       ├── aurora/                     # Aurora S 視覺 SLAM 工具（皆獨立、無相依）
@@ -100,14 +100,33 @@ Go_by_my_self/
 │       │   ├── record_aurora.sh        # rosbag 錄製 (light/full profile)
 │       │   ├── analyze_aurora_bag.py   # 離線 SLAM 品質分析 (漂移/跳點/狀態/TF)
 │       │   └── inspect_semantic_seg.py # 測試 Aurora 內建語意分割
+│       ├── route/                      # A/B/C/D 分段路線（見 route/README.md）
+│       │   ├── build_routes.py         # 從 .stcm keyframe 批次抽路線 + 品質驗證
+│       │   ├── extract_oneway.py       # 單段抽取 / --report 診斷 / --dump-kf
+│       │   ├── extract_route.py        # 整張圖切成多條 pass（舊多-session 圖用）
+│       │   ├── route_graph.py          # 多 pass 圖搜尋接成 plan（分段圖用不到）
+│       │   ├── merge_site_map.py       # 八段配準到同一座標系 → routes_site/
+│       │   ├── ros_move_follow_route.py# 依 plan_X_Y.csv 循跡行駛
+│       │   ├── route_monitor.py        # 行駛監看（網頁介面）
+│       │   ├── preflight.py            # 出發前檢查
+│       │   └── routes_A_B/ … routes_site/  # 八段路線 + 整合地圖
 │       ├── segmentation/               # 地板分割 / 資料集工具（皆獨立）
 │       │   ├── collect_floor_dataset.py# YOLO 地板訓練資料收集 (Color 串流) → ../train_data/
+│       │   ├── capture_paper_dataset.py# TANET 論文資料集拍攝 → ../../../paper/paper_data/
 │       │   ├── segformer_road.py       # 預訓練 SegFormer 路面分割測試
 │       │   ├── autolabel_segformer.py  # SegFormer 自動標註 → YOLOv8-seg 資料集 (跨平台)
 │       │   └── gemini_filter.py        # Gemini API 影像品質過濾 (clear/minor/bad)
-│       ├── train_data/                 # 訓練影像 (session_* 資料夾)
-│       └── sorted_data/                # 已分類訓練素材
-├── COMMANDS.md                         # 所有工作流程的指令速查表
+│       ├── models/                     # best_paper.pt / best_field_jetson.pt / yolov8n.pt
+│       ├── train_data/                 # 訓練影像 (session_* 資料夾) —— 唯一的影像來源
+│       └── dataset_notes/              # 已封存資料夾的分類/批次名單 (CSV，見其 README)
+├── paper/                              # TANET 2026 論文
+│   ├── PLAN.md                         # ★ 計畫與實驗設計的唯一真實來源
+│   ├── HANDOFF.md                      # 換機/接手須知
+│   ├── b1_geometry.py                  # B1 深度+幾何規則基線
+│   ├── make_label_sheets.py            # 匿名標註表單產生器
+│   └── paper_data/                     # 論文資料集 247 張 (color/depth/depth_vis/seg_vis)
+├── robot_menu.sh                       # 現場操作選單
+├── autopilot_test.sh                   # 自駕測試腳本
 ├── requirements.txt
 └── README.md
 ```
@@ -138,11 +157,10 @@ python3 Detect/old_detect/ros_move_follow_tag.py # 控制節點，訂閱 /target
 ### New Detect — RealSense D435i on PC
 
 **IMPORTANT: the D435i can only be opened by ONE program at a time.**
-Detect nodes (`ros_detect_*.py`), test nodes (`ros_test_*.py`), `collect_floor_dataset.py`,
+Detect nodes (`ros_detect_*.py`), `collect_floor_dataset.py`, `capture_paper_dataset.py`,
 and `realsense-viewer` all open the camera — never run two of them together.
-The `ros_test_*.py` nodes are self-contained (camera + control in one file): run them
-*instead of* `ros_detect_apriltag.py`, not alongside it. The `ros_move_*.py` controllers
-do NOT open the camera (they only subscribe to `/target_info`) and pair with a detect node.
+The `ros_move_*.py` controllers do NOT open the camera (they only subscribe to
+`/target_info`) and pair with a detect node.
 
 ```bash
 python3 Detect/new_detect/ros_detect_apriltag.py # IR AprilTag 感知節點，發布 /target_info
@@ -154,10 +172,6 @@ python3 Detect/new_detect/ros_move_pair_task.py  # 去程+回程任務控制節�
 python3 Detect/new_detect/ros_detect_dual.py                 # /target_info /floor_detected /floor_info /cmd_vel
 python3 Detect/new_detect/ros_detect_dual.py _drive:=false   # 純感知，搭配 ros_move_* 控制器
 python3 Detect/new_detect/ros_detect_dual.py _tags:=false    # 關 AprilTag/IR，CPU 全給分割（車道跟隨測試）
-
-# 或（單獨跑，不可與上面同時）：自帶相機的測試節點
-python3 Detect/new_detect/ros_test_bypass.py         # 障礙繞行測試
-python3 Detect/new_detect/ros_test_ground_bypass.py  # 地面 tag 門 + /odom 路徑記憶 + 繞障回線
 ```
 
 ### Aurora S Visual SLAM (Ethernet — independent of the D435i)
@@ -236,7 +250,6 @@ D435i Color → best.pt road seg → /floor_detected + /floor_info → lane-cent
 - **new_detect/ros_detect_apriltag.py** — Reads from RealSense D435i IR stream (global shutter, no jello), publishes to `/target_info`.
 - **new_detect/ros_detect_dual.py** — Dual stream: IR→AprilTag (`/target_info`) + Color→YOLOv8-seg `best.pt` road segmentation. Publishes `/floor_detected` (Bool) and `/floor_info` (Pose repurposed: `orientation.w`=detected, `position.x`=lane-center offset err_norm, `position.y`=heading_norm, `position.z`=road coverage). YOLO runs in a worker thread (CPU ~120-190 ms @ imgsz 320) so the 30 fps AprilTag loop never blocks; the road class id is auto-resolved from `model.names` (dataset classes: 0=grass, 1=road, 2=sidewalk). Drive mode (default on, `_drive:=false` to disable) does lane-centering P-control on `/cmd_vel`: starts PAUSED, SPACE toggles run/pause, auto-stops when road coverage < `MIN_ROAD_COVER` or the seg result is stale.
 - **new_detect/ros_move_pair_task.py** — Outbound+return task controller (state machine, keyboard e-stop). Defines `RouteMap` (reads `route_map.yaml`, pair→location lookup + BFS), reused by `ros_move_turn_right.py`.
-- **new_detect/ros_test_ground_bypass.py** — Self-contained (IR+Depth): ground-gate steering, `/odom` path-line memory across blind gaps, closed-loop depth+lidar obstacle bypass that returns to the remembered line.
 - **new_detect/aurora/aurora_slam.launch** — Wrapper for the SLAMTEC Aurora S ROS SDK (`slamware_ros_sdk`, built in `~/aurora_ros`). Runs the vendor node with all frames renamed `aurora_*` so its SLAM TF tree stays independent of the wheeltec tree. Primary localization for the autonomous-driving goal; fusion of its point cloud into `base_link` (mount offset 0.15 m fwd / 0 / 0.45 m up) is a later step (see the commented block at the bottom of the launch).
 - **new_detect/segmentation/** — Standalone dataset/segmentation tools: `collect_floor_dataset.py` (RealSense capture → `../train_data/`), `segformer_road.py` (pretrained SegFormer test), `autolabel_segformer.py` (SegFormer → YOLOv8-seg auto-labels, cross-platform, `--data` required), `gemini_filter.py` (Gemini API image-quality sorter; needs `GEMINI_API_KEY`). Saved SLAM maps (`.stcm`) live in `~/maps/` — they are gitignored (too big for GitHub).
 
@@ -247,8 +260,7 @@ D435i Color → best.pt road seg → /floor_detected + /floor_info → lane-cent
 | old_detect/ros_move_follow_tag.py | `TARGET_DIST` | 0.5 m | Desired tag-to-robot distance |
 | new_detect/ros_move_pair_task.py | `MAX_SPEED_V` | 0.2 | Cruise forward speed |
 | new_detect/ros_move_pair_task.py | `TAG_LOST_TIMEOUT` | 10.0 s | Seconds with no tag before stopping |
-| new_detect/ros_test_ground_bypass.py | `CAM_TILT_DEG` / `CAM_HEIGHT_M` | 13.0° / 0.565 m | Camera down-tilt & optical-centre height; wrong value makes the ground read as an obstacle. Measured 2026-08-04 by `measure_cam.py` — re-measure after any re-mount |
-| new_detect/ros_test_ground_bypass.py | `DODGE_OFFSET` | 0.45 m | Rightward shift when bypassing (keep inside lane) |
+| new_detect/measure_cam.py | camera down-tilt / height | 13.0° / 0.565 m | Measured 2026-08-04; the value any ground-plane code must use. Re-measure after any re-mount |
 | new_detect/ros_detect_apriltag.py | `TAG_SIZE_M` | 0.11 m | Printed tag side length (must match reality) |
 | new_detect/ros_detect_apriltag.py | `W` / `H` / `FPS` | 1280/720/30 | IR stream resolution & frame rate |
 | new_detect/ros_detect_dual.py | `LANE_SPEED_V` | 0.15 | Lane-centering cruise speed |
