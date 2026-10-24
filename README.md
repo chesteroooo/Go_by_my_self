@@ -104,7 +104,7 @@ python3 Detect/new_detect/ros_detect_dual.py
 ```
 
 The D435i can be opened by only one program at a time, and the Aurora by only one client at a
-time. See [COMMANDS.md](COMMANDS.md) for all workflows.
+time. [`robot_menu.sh`](robot_menu.sh) is a single menu that launches every field test.
 
 ## Repository Layout
 
@@ -114,7 +114,10 @@ Detect/apriltag_setting/  AprilTag pair detection core
 Detect/old_detect/        Legacy: camera on the robot
 Detect/new_detect/        Current: D435i perception, controllers, route map
   ├── aurora/             Aurora S visual SLAM tools
-  └── segmentation/       Road segmentation & dataset tools
+  ├── segmentation/       Road segmentation & dataset tools
+  ├── models/             Trained YOLOv8-seg weights
+  └── route/              Segmented A/B/C/D route definitions
+robot_menu.sh             Field-test launcher menu
 docs/media/               README images and videos
 paper/                    TANet paper plan (edge VLM for SLAM-degradation detection)
 ```
