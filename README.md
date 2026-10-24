@@ -11,11 +11,6 @@ drives.
 
 ## System Architecture
 
-<p align="center">
-  <a href="docs/media/system_demo.mp4"><img src="docs/media/system_demo.jpg" width="800" alt="Operator desktop: teleop panel, color segmentation view, IR AprilTag view and task launcher"></a>
-  <br><sub>Operator desktop during a field run: teleop panel, color road segmentation, IR AprilTag view and task launcher.</sub>
-</p>
-
 ```mermaid
 flowchart LR
     subgraph Sensors
